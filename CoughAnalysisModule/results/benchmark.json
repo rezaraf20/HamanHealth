@@ -1,0 +1,38 @@
+{
+  "dataset": "coughvid",
+  "coughvid_threshold": 0.5,
+  "results": [
+    {
+      "model": "coughkit",
+      "records": 27550,
+      "load_seconds": 0.305778250000003,
+      "peak_rss_delta_mb": 67.731456,
+      "mean_latency_ms": 255.35097252937067,
+      "p50_latency_ms": 131.69764599979317,
+      "p95_latency_ms": 530.7956059500157,
+      "audio_seconds_per_wall_second": 31.969329666709577,
+      "accuracy": 0.944464609800363,
+      "precision": 0.9273222919452732,
+      "recall": 0.9935522980271134,
+      "f1": 0.9592955198467596,
+      "roc_auc": 0.9916282977295131,
+      "average_precision": 0.9955431476461278
+    },
+    {
+      "model": "yamnet",
+      "records": 27550,
+      "load_seconds": 4.930262959000174,
+      "peak_rss_delta_mb": 1171.030016,
+      "mean_latency_ms": 15.81200937001599,
+      "p50_latency_ms": 17.096687999583082,
+      "p95_latency_ms": 19.967078949503048,
+      "audio_seconds_per_wall_second": 516.2784330868441,
+      "accuracy": 0.8070780399274047,
+      "precision": 0.8694074969770254,
+      "recall": 0.8320842058855946,
+      "f1": 0.8503364964942416,
+      "roc_auc": 0.8645767548608403,
+      "average_precision": 0.9031270523276341
+    }
+  ]
+}

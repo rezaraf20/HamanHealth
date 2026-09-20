@@ -1,0 +1,22 @@
+# Python 3.12 on Apple Silicon. Install with: .venv/bin/python -m pip install -r requirements.txt
+setuptools<81
+numpy==1.26.4
+scipy==1.14.1
+librosa==0.11.0
+soundfile==0.13.1
+scikit-learn==1.8.0
+xgboost==3.4.1
+pandas==3.0.0
+sounddevice==0.5.5
+tensorflow-macos==2.16.2
+tensorflow-hub==0.16.1
+matplotlib==3.10.8
+seaborn==0.13.2
+tqdm==4.67.3
+psutil==7.2.2
+pytest==9.0.2
+
+# CoughKit is installed from the cloned source, keeping its bundled artifacts available.
+# .venv/bin/python -m pip install --no-deps -e ./models/coughkit
+# CoughKit also imports this sibling package during module initialization.
+# .venv/bin/python -m pip install --no-deps -e ./models/audiokit

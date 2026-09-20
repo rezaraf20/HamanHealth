@@ -1,0 +1,50 @@
+{
+  "params": {
+    "COUGH": {
+      "onThreshold": 0.5,
+      "offThreshold": 0.2,
+      "minDurationMs": 600,
+      "mergeGapMs": 720,
+      "refractoryMs": 250,
+      "maxDurationMs": 3000
+    },
+    "SNEEZE": {
+      "onThreshold": 0.2,
+      "offThreshold": 0.12,
+      "minDurationMs": 600,
+      "mergeGapMs": 720,
+      "refractoryMs": 500,
+      "maxDurationMs": 3000
+    },
+    "SNORE": {
+      "onThreshold": 0.4,
+      "offThreshold": 0.28,
+      "minDurationMs": 600,
+      "mergeGapMs": 720,
+      "refractoryMs": 500,
+      "maxDurationMs": 6000
+    },
+    "BREATHING": {
+      "onThreshold": 0.5,
+      "offThreshold": 0.3,
+      "minDurationMs": 960,
+      "mergeGapMs": 1440,
+      "refractoryMs": 500,
+      "maxDurationMs": 15000
+    },
+    "SPEECH": {
+      "onThreshold": 0.6,
+      "offThreshold": 0.4,
+      "minDurationMs": 960,
+      "mergeGapMs": 1440,
+      "refractoryMs": 300,
+      "maxDurationMs": 30000
+    }
+  },
+  "gateMarginDb": 6.0,
+  "speechSuppressionThreshold": 0.55,
+  "coughSneezeExclusionThreshold": 0.2,
+  "coughBoutGapMs": 3000,
+  "snoreEpisodeGapMs": 60000,
+  "emaAlpha": 0.5
+}

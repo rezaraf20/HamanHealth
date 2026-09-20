@@ -1,0 +1,20 @@
+{
+  "dataset": "esc50",
+  "coughvid_threshold": 0.5,
+  "results": [
+    {
+      "model": "coughkit",
+      "records": 2,
+      "load_seconds": 0.0535272500001156,
+      "peak_rss_delta_mb": 238.30528,
+      "mean_latency_ms": 4884.204749999981,
+      "p50_latency_ms": 4884.204749999981,
+      "p95_latency_ms": 9201.969487499968,
+      "audio_seconds_per_wall_second": 1.0237081072410037,
+      "accuracy": 1.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  ]
+}

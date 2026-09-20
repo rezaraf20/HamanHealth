@@ -1,0 +1,47 @@
+{
+  "clips": 2000,
+  "per_class": {
+    "COUGH": {
+      "esc50_category": "coughing",
+      "roc_auc": 0.9884948979591837,
+      "average_precision": 0.7798861532728925,
+      "median_positive_score": 0.9911649525165558,
+      "p95_negative_score": 0.05890456028282626,
+      "top_false_positive_categories": {
+        "sneezing": 0.9996350407600403,
+        "laughing": 0.9643948078155518,
+        "crying_baby": 0.9079502820968628,
+        "drinking_sipping": 0.6421247720718384,
+        "can_opening": 0.627721905708313
+      }
+    },
+    "SNEEZE": {
+      "esc50_category": "sneezing",
+      "roc_auc": 0.987984693877551,
+      "average_precision": 0.6766505247454108,
+      "median_positive_score": 0.7377950847148895,
+      "p95_negative_score": 0.05478273313492532,
+      "top_false_positive_categories": {
+        "breathing": 0.9759175181388855,
+        "drinking_sipping": 0.9272047877311707,
+        "crying_baby": 0.8372224569320679,
+        "snoring": 0.8147030472755432,
+        "laughing": 0.7605922818183899
+      }
+    },
+    "SNORE": {
+      "esc50_category": "snoring",
+      "roc_auc": 0.9985076530612246,
+      "average_precision": 0.9487520172286277,
+      "median_positive_score": 0.9992918074131012,
+      "p95_negative_score": 0.143462675064802,
+      "top_false_positive_categories": {
+        "drinking_sipping": 0.9976626038551331,
+        "insects": 0.9974254965782166,
+        "breathing": 0.966525673866272,
+        "pouring_water": 0.8925503492355347,
+        "sneezing": 0.8721800446510315
+      }
+    }
+  }
+}

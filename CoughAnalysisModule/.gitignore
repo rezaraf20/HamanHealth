@@ -1,0 +1,34 @@
+# Scoped to this module so the rest of the HamanHealth repo is unaffected.
+
+# Datasets: ~31 GB, third-party licences (see THIRD_PARTY.md). Never commit.
+Datasets/
+
+# Third-party clones with their own git history; see docs/DEVELOPMENT.md.
+models/coughkit/
+models/audiokit/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated: scored synthetic nights, reproducible via ml/night_mixer.py.
+# Note yamnet.tflite is NOT here - it lives in android/app/src/main/assets/ and IS
+# committed, so the app builds from a fresh clone without re-running the export.
+ml/artifacts/
+
+# Gradle
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/.kotlin/
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# macOS
+.DS_Store
