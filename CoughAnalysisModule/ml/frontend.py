@@ -63,6 +63,24 @@ def reduce_scores(raw: np.ndarray) -> np.ndarray:
     return out
 
 
+# Input normalisation. Mirrors InputNormalizer.kt.
+#
+# YAMNet is strongly level-sensitive: on real COUGHVID coughs the median cough score
+# falls from 0.97 to 0.57 when the input is 13 dB quieter (results/recall_diagnosis.json),
+# which is roughly the gap between a flagship mic and a budget one. Boosting each window's
+# peak to a fixed target makes recall close to level-invariant. Boost-only and capped, so
+# loud audio is untouched and pure noise is not amplified without limit. The level
+# evidence (rms, peakDb, gate) is always taken from the UN-normalised frame.
+NORM_TARGET_PEAK = 0.5      # -6 dBFS
+NORM_MAX_GAIN_DB = 30.0
+
+
+def normalise(frames: np.ndarray) -> np.ndarray:
+    peaks = np.abs(frames).max(axis=-1, keepdims=True) + 1e-9
+    gain = np.clip(NORM_TARGET_PEAK / peaks, 1.0, 10 ** (NORM_MAX_GAIN_DB / 20))
+    return (frames * gain).astype(np.float32)
+
+
 def rms_db(frame: np.ndarray) -> float:
     r = float(np.sqrt(np.mean(frame.astype(np.float64) ** 2)))
     return -160.0 if r < 1e-8 else float(20.0 * np.log10(r))

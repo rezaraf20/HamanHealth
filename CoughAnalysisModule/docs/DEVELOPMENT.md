@@ -71,6 +71,85 @@ without a real device:
 embeddings, stale-buffer detection, database open, WAL and foreign keys actually being
 on, and cascade delete.
 
+## Why detection varies between phones
+
+Low recall on some phones (A31, P30 Lite) and misses even on flagships were traced with
+`ml/diagnose_recall.py` (real COUGHVID coughs through the full chain) and
+`tools/device_recall_test.sh` (real coughs played to a real phone). Findings, in order of
+impact:
+
+1. **YAMNet is strongly level-sensitive.** The median cough score fell from 0.97 to 0.57
+   when input was 13 dB quieter — roughly flagship mic vs budget mic. Fixed by
+   `InputNormalizer`: each window's peak is boosted to −6 dBFS (boost-only, capped at
+   +30 dB) before inference. Far-field recall 25% → 80%. Level evidence (gate, peakDb,
+   attribution) still uses the un-normalised signal.
+2. **The microphone route matters more than any threshold.** Same coughs, Galaxy S23:
+
+   | Route | Received peak | Noise floor | Median cough score (quiet) |
+   |---|---|---|---|
+   | VOICE_RECOGNITION | −29.5 dB | −78.9 dB | 0.34 |
+   | UNPROCESSED | −47.0 dB | −78.7 dB | 0.09 |
+   | CAMCORDER | −30.4 dB | −68.4 dB | 0.57 |
+
+   VOICE_RECOGNITION's noise suppression damages coughs; UNPROCESSED has no mic
+   pre-gain; CAMCORDER keeps the cough intact. The default order is now CAMCORDER →
+   VOICE_RECOGNITION → MIC → UNPROCESSED, and **Settings → Run microphone diagnostics**
+   scores each route with the model while the user coughs and keeps the best one for
+   that phone. Some phones also band-limit certain routes to ~4 kHz; the live stream is
+   checked for that and the home screen warns if it happens.
+3. **Median smoothing erased real coughs.** A cough seen confidently by one or two
+   windows lost its peak in a median-3. Replaced with attack-release smoothing
+   (`max(raw, ema)`), which keeps a peak on the frame it occurs and smooths only the
+   decay.
+4. **Timestamp jitter on the phone.** Frames were stamped from a sample count updated
+   per 100 ms chunk, so durations wobbled around the tuned `minDurationMs` (exactly three
+   hops) and borderline coughs that pass offline were dropped on-device. Frames are now
+   stamped `k × 480 ms`, identical to the tuning harness. The parity test could not see
+   this — its fixture uses exact timestamps — which is why device replays exist.
+5. Smaller: speech suppression now needs *sustained* speech (4 of 5 frames), since a
+   voiced cough can score high on Speech for one frame; and a sneeze must beat a cough by
+   0.15 to win, since coughs are far more common at night.
+
+The tuning nights were also rebuilt: ESC-50's cough clips are loud, clean bouts and
+over-stated recall, so nights now use real COUGHVID coughs across 0 to −28 dB, and
+COUGHVID is split so reported recall is measured on a held-out 20%.
+
+### What limits recall now, and the proposed next step
+
+With the fixes above, the phone and the Python replay produce identical events from the
+same audio, so the pipeline behaves on-device exactly as tuned. The remaining misses are
+coughs YAMNet's own `Cough` output scores near zero on that phone's audio — no threshold
+can recover those without flooding false alarms.
+
+The candidate fix is a small cough-specific read-out trained on YAMNet's 1024-d
+embeddings (which the app already computes every frame; applying it is one dot product).
+`ml/exp_cough_head.py` is the feasibility check. On the S23 captures it lifted quiet
+coughs from 3/12 to 8/12 on CAMCORDER and from 4/12 to 10/12 on VOICE_RECOGNITION, and
+improved frame-level AUC on 7 of 10 captures. Not shipped yet, for two reasons:
+
+- its false-alarm cost over full nights has not been measured;
+- its training negatives currently include ESC-50, which is **CC BY-NC**. A shipped model
+  trained on that data is a more direct derivative than tuned thresholds; decide on the
+  licensing, or train the negatives on permissively licensed audio instead.
+
+### Testing a new phone
+
+```bash
+./tools/install.sh                                   # debug build on the phone
+./tools/device_recall_test.sh a31                    # default route
+./tools/device_recall_test.sh a31_cam CAMCORDER@16k  # force a route
+.venv/bin/python ml/analyze_capture.py results/device/a31.pcm --dir ml/artifacts/playback
+```
+
+Place the phone next to the Mac speaker. The test plays 24 held-out coughs, scores what
+the phone logged, and pulls the raw capture; `analyze_capture.py` then shows per cough
+how loud it arrived, how much high-frequency content survived, whether the gate opened
+and what the model scored — i.e. where on that phone each cough is lost. Raw captures
+are only written by debug builds, and only while `files/debug_raw` exists on the phone.
+
+Laptop speakers are thin below ~200 Hz, so absolute numbers from this test understate
+real coughs somewhat. Use it to compare routes, builds and phones against each other.
+
 ## Re-tuning the detector
 
 Thresholds in `android/app/src/main/assets/detector_config.json` are generated, not

@@ -1,38 +1,39 @@
 package com.haman.domain
 
 /**
- * Median-3 followed by an EMA, per class.
+ * Exponential moving average, per class.
  *
- * Raw YAMNet scores are spiky frame to frame. The median kills single-frame outliers
- * (the main cause of spurious one-frame events) without the lag a longer window would
- * add; the EMA then takes the remaining jitter off. Order matters: EMA-then-median
- * would smear an outlier across three frames before removing it.
+ * This used to be a median-3 followed by the EMA. The median was removed on evidence:
+ * on real coughs it discarded 14-35% of detections YAMNet had actually made. A cough is
+ * short, a strong one is often seen confidently by only one or two overlapping windows,
+ * and a median over three frames erases exactly that peak (results/recall_diagnosis.json).
+ *
+ * Transient rejection now rests on minDurationMs and the hysteresis thresholds, and the
+ * thresholds were re-tuned with this smoother in place, so the false-alarm budget still
+ * holds. Mirrors assembler.smooth in ml/.
  */
-class ScoreSmoother(private val alpha: Float = 0.5f) {
+class ScoreSmoother(
+    private val alpha: Float = 0.5f,
+    /** max(raw, ema): instant attack, smoothed release. See DetectorConfig.attackRelease. */
+    private val attackRelease: Boolean = true,
+) {
     private val n = AcousticClass.ALL.size
-    private val h1 = FloatArray(n)
-    private val h2 = FloatArray(n)
     private val ema = FloatArray(n)
-    private var seen = 0
+    private var seen = false
 
     fun smooth(raw: FloatArray, out: FloatArray = FloatArray(n)): FloatArray {
         for (i in 0 until n) {
-            val med = median3(raw[i], h1[i], h2[i])
-            val v = if (seen == 0) med else alpha * med + (1 - alpha) * ema[i]
+            var v = if (!seen) raw[i] else alpha * raw[i] + (1 - alpha) * ema[i]
+            if (attackRelease && raw[i] > v) v = raw[i]
             ema[i] = v
             out[i] = v
-            h2[i] = h1[i]
-            h1[i] = raw[i]
         }
-        if (seen < 3) seen++
+        seen = true
         return out
     }
 
     fun reset() {
-        java.util.Arrays.fill(h1, 0f); java.util.Arrays.fill(h2, 0f)
-        java.util.Arrays.fill(ema, 0f); seen = 0
+        java.util.Arrays.fill(ema, 0f)
+        seen = false
     }
-
-    private fun median3(a: Float, b: Float, c: Float): Float =
-        maxOf(minOf(a, b), minOf(maxOf(a, b), c))
 }

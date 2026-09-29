@@ -66,6 +66,11 @@ private fun HamanApp() {
         if (micGranted) MonitoringService.start(context)
     }
 
+    // Mic permission without auto-starting monitoring, for the diagnostics screen.
+    val permissionLauncherMicOnly = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> micGranted = granted }
+
     val batteryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { batteryExempt = isBatteryExempt(context) }
@@ -119,12 +124,23 @@ private fun HamanApp() {
                     onRequestBatteryExemption = {
                         batteryLauncher.launch(batteryExemptionIntent(context.packageName))
                     },
+                    onOpenDiagnostics = { nav.navigate("diagnostics") },
                 )
             }
             composable("history") {
                 HistoryScreen(vm) { id -> nav.navigate("session/$id") }
             }
-            composable("settings") { SettingsScreen(vm) }
+            composable("settings") { SettingsScreen(vm) { nav.navigate("diagnostics") } }
+            composable("diagnostics") {
+                DiagnosticsScreen(
+                    vm = vm,
+                    micGranted = micGranted,
+                    onRequestMic = {
+                        permissionLauncherMicOnly.launch(Manifest.permission.RECORD_AUDIO)
+                    },
+                    onBack = { nav.popBackStack() },
+                )
+            }
             composable("session/{id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
                 SessionDetailScreen(vm, id) { nav.popBackStack() }

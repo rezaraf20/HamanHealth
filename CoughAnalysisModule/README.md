@@ -15,6 +15,9 @@ iOS later without a rewrite.
 | **Original model benchmark** | [docs/BENCHMARK.md](docs/BENCHMARK.md) |
 | **Licences and attribution** | [THIRD_PARTY.md](THIRD_PARTY.md) |
 
+**Just want to try it?** Install the ready-made APK: see [INSTALL.md](../INSTALL.md) at the
+repository root.
+
 ---
 
 ## Quick start
@@ -25,6 +28,7 @@ Requires macOS on Apple Silicon and a phone with USB debugging enabled.
 ./tools/setup_env.sh     # JDKs + Android SDK under $HOME, no sudo (~4 GB)
 ./tools/build.sh         # run the test suite and build the APK
 ./tools/install.sh       # install on the connected phone
+./tools/release_apk.sh   # build the installable release APK into the repository root
 ```
 
 To prepare the phone: Settings → About phone → tap **Build number** seven times, then
@@ -35,12 +39,17 @@ On first launch the app asks for microphone and notification permission and offe
 exempt itself from battery optimisation. **Accept the battery exemption** — without it
 Android usually kills the recording partway through the night.
 
+On each new phone, run **Settings → Run microphone diagnostics** once. It listens to a
+few coughs on every microphone route the phone offers and keeps the one where they are
+recognised best. Which route works best differs between phones, and choosing wrong is
+the main reason detection works on one model and fails on another.
+
 ---
 
 ## How it works
 
 ```
-mic ─► noise gate ─► YAMNet (TFLite) ─► smoothing ─► event assembly ─► SQLite
+mic ─► noise gate ─► gain normalisation ─► YAMNet (TFLite) ─► smoothing ─► event assembly ─► SQLite
                           │
                           └─► 1024-d embedding ─► speaker attribution
 ```
@@ -74,28 +83,42 @@ window. They exist so a false positive can be checked and corrected.
 
 ## Measured performance
 
-Clip level, ESC-50, 2000 clips ([`ml/eval_esc50.py`](ml/eval_esc50.py)):
+**Real coughs, held out from tuning** — 200 COUGHVID recordings (crowdsourced from
+users' own phones) placed in room noise at different levels, through the full on-device
+chain ([`ml/diagnose_recall.py`](ml/diagnose_recall.py)):
 
-| Class | ROC-AUC | Average precision |
+| Condition | Recall before fixes | Recall now |
 |---|---|---|
-| Cough | 0.988 | 0.780 |
-| Sneeze | 0.988 | 0.677 |
-| Snore | 0.999 | 0.949 |
+| Near (phone held close) | 72% | **87%** |
+| Bedside (−15 dB) | 54% | **88%** |
+| Far / low-sensitivity mic (−28 dB) | 24% | **88%** |
+| Band-limited voice path | 26% | **76%** |
 
-Event level, 3 hours of synthetic night audio with exact ground truth, after tuning
-([`ml/night_mixer.py`](ml/night_mixer.py) → [`ml/eval_night.py`](ml/eval_night.py)):
+**On a real phone** — 12 held-out coughs played from a laptop speaker to a Galaxy S23
+([`tools/device_recall_test.sh`](tools/device_recall_test.sh)):
+
+| Build | Loud | Quiet (−20 dB) |
+|---|---|---|
+| Before | 1/12 | 0/12 |
+| Now (CAMCORDER route) | 6/12 | 3–4/12 |
+
+Laptop speakers are thin below ~200 Hz, so this rig understates real coughs; use it to
+compare builds, routes and phones rather than as an absolute figure. The remaining
+misses are coughs the model itself scores near zero — see
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the proposed next step.
+
+**False alarms** — 4 hours of synthetic nights (real coughs and 24 kinds of household
+distractor sound mixed into room noise), after tuning:
 
 | Class | Precision | Recall | False alarms/hour |
 |---|---|---|---|
-| Cough | 1.000 | 0.533 | 0.00 |
-| Sneeze | 1.000 | 0.500 | 0.00 |
-| Snore | 0.992 | 0.614 | 0.67 |
+| Cough | 0.975 | 0.817 | 0.75 |
+| Sneeze | 0.857 | 0.250 | 0.25 |
+| Snore | 0.989 | 0.972 | 0.50 |
 
-**Read these with care.** The night audio is ESC-50 clips mixed into generated room
-noise, not recorded bedrooms — a tuning and regression target, not a measurement of
-real-world accuracy. The sneeze row rests on 6 ground-truth events and is not
-statistically meaningful. Real accuracy in a real bedroom is unknown until a night is
-recorded and labelled, which is what the labelling UI is for.
+Synthetic nights are a tuning target, not a measurement of a real bedroom, and the
+sneeze row rests on 24 events. Sneeze recall is genuinely weak — ESC-50 provides only
+40 sneeze clips.
 
 ---
 
@@ -145,7 +168,7 @@ schema come along unchanged.
 ## Tests
 
 ```
-40 JVM tests      ./tools/build.sh
+58 JVM tests      ./tools/build.sh
  8 device tests   cd android && ./gradlew :app:connectedDebugAndroidTest
 ```
 

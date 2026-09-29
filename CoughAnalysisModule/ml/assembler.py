@@ -31,8 +31,19 @@ DEFAULT_PARAMS = {
 DEFAULTS = dict(
     gate_margin_db=6.0,
     speech_suppression=0.55,
+    # Speech must be present in this many of the last `speech_window` frames to suppress
+    # an onset. 1 reproduces the original single-frame rule, which blocked real voiced
+    # coughs on-device (a cough can score 0.95 on Speech for one frame; talking is sustained).
+    speech_sustain=4,
+    speech_window=5,
     cough_sneeze_exclusion=0.20,
+    # Sneeze must beat cough by this margin to win arbitration. Coughs are far more common
+    # at night than sneezes, so a near-tie is more likely a cough.
+    sneeze_margin=0.15,
     ema_alpha=0.5,
+    # "ema": plain EMA. "attack_release": max(raw, ema) - an envelope follower that keeps a
+    # peak intact on the frame it happens and only smooths the decay.
+    smoothing="attack_release",
     cough_bout_gap_ms=3000,
 )
 
@@ -66,18 +77,22 @@ def noise_floor(rms: np.ndarray, window: int = 125, pct: float = 0.10) -> np.nda
     return out
 
 
-def smooth(raw: np.ndarray, alpha: float) -> np.ndarray:
-    """median-3 then EMA, per class. Mirrors ScoreSmoother."""
+def smooth(raw: np.ndarray, alpha: float, mode: str = "ema") -> np.ndarray:
+    """EMA per class. Mirrors ScoreSmoother.
+
+    There used to be a median-3 in front of this. It was removed because on real coughs
+    it discarded 14-35% of detections YAMNet had actually made (a cough is short, and a
+    median over three frames erases a peak that only one or two frames see). Single-frame
+    spikes are rejected by minDurationMs instead, which does it without that cost.
+    """
     n, k = raw.shape
     out = np.zeros_like(raw)
-    h1 = np.zeros(k, dtype=np.float32)
-    h2 = np.zeros(k, dtype=np.float32)
     ema = np.zeros(k, dtype=np.float32)
     for i in range(n):
-        med = np.median(np.stack([raw[i], h1, h2]), axis=0)
-        ema = med if i == 0 else alpha * med + (1 - alpha) * ema
+        ema = raw[i] if i == 0 else alpha * raw[i] + (1 - alpha) * ema
+        if mode == "attack_release":
+            ema = np.maximum(raw[i], ema)
         out[i] = ema
-        h2, h1 = h1, raw[i].copy()
     return out
 
 
@@ -93,13 +108,13 @@ def exclusion_threshold(params: dict, cfg: dict) -> float:
     return min(cfg["cough_sneeze_exclusion"], on_c, on_s)
 
 
-def apply_exclusion(sm: np.ndarray, thresh: float) -> np.ndarray:
+def apply_exclusion(sm: np.ndarray, thresh: float, margin: float = 0.0) -> np.ndarray:
     """Winner-take-all between cough and sneeze. Mirrors applyCoughSneezeExclusion."""
     out = sm.copy()
     c, s = IDX["COUGH"], IDX["SNEEZE"]
     both = (out[:, c] >= thresh) & (out[:, s] >= thresh)
-    cough_wins = both & (out[:, c] >= out[:, s])
-    sneeze_wins = both & (out[:, c] < out[:, s])
+    sneeze_wins = both & (out[:, s] >= out[:, c] + margin)
+    cough_wins = both & ~sneeze_wins
     out[cough_wins, s] = 0.0
     out[sneeze_wins, c] = 0.0
     return out
@@ -145,8 +160,12 @@ def prepare(scores: np.ndarray, rms: np.ndarray, cfg: dict = None) -> dict:
     # Exclusion is applied per-candidate in assemble_prepared, not here: its threshold
     # depends on the on-thresholds being swept. SPEECH is unaffected by it, so the
     # speech mask can still be precomputed.
-    sm = smooth(gated, cfg["ema_alpha"])
-    speech = sm[:, IDX["SPEECH"]] >= cfg["speech_suppression"]
+    sm = smooth(gated, cfg["ema_alpha"], cfg["smoothing"])
+    flags = (sm[:, IDX["SPEECH"]] >= cfg["speech_suppression"]).astype(np.int32)
+    w = cfg["speech_window"]
+    csum = np.concatenate([[0], np.cumsum(flags)])
+    recent = np.array([csum[i + 1] - csum[max(0, i + 1 - w)] for i in range(len(flags))])
+    speech = recent >= cfg["speech_sustain"]
     return dict(sm=sm, floor=floor, rms=rms, gate=gate, speech=speech, cfg=cfg)
 
 
@@ -165,7 +184,7 @@ def assemble(
 def assemble_prepared(prep: dict, params: dict, hop_ms: int = HOP_MS, t0: int = 0) -> list[Event]:
     cfg = prep["cfg"]
     params = validate_params(params, hop_ms)
-    sm = apply_exclusion(prep["sm"], exclusion_threshold(params, cfg))
+    sm = apply_exclusion(prep["sm"], exclusion_threshold(params, cfg), cfg["sneeze_margin"])
     floor, rms = prep["floor"], prep["rms"]
     gate_arr, speech_arr = prep["gate"], prep["speech"]
 
@@ -228,28 +247,28 @@ def assemble_prepared(prep: dict, params: dict, hop_ms: int = HOP_MS, t0: int = 
 
 
 def match(pred: list[Event], truth: list[dict], tolerance_ms: int = 1500):
-    """Greedy one-to-one matching by temporal overlap, per class.
+    """Overlap-based scoring, per class.
 
-    A prediction counts as correct if it overlaps a ground-truth event of the same
-    class, allowing a tolerance either side - detection necessarily lags onset because
-    an event is only confirmed once minDuration has elapsed.
+    Recall  = fraction of ground-truth regions touched by at least one prediction.
+    FP      = predictions that touch no ground-truth region of their class.
+
+    One-to-one matching was replaced because a real cough recording often holds a bout
+    of several coughs in one ground-truth region; one-to-one scoring counted every cough
+    after the first as a false alarm and so tuned the detector to under-report bouts.
     """
     results = {}
     for cls in LOGGED:
         p = [e for e in pred if e.cls == cls]
         t = [g for g in truth if g["cls"] == cls]
-        used = set()
-        tp = 0
+        hit = set()
+        tp_pred = 0
         for e in p:
-            best, best_ov = None, 0
-            for j, g in enumerate(t):
-                if j in used:
-                    continue
-                ov = min(e.end_ms, g["end_ms"] + tolerance_ms) - max(e.start_ms, g["start_ms"] - tolerance_ms)
-                if ov > best_ov:
-                    best, best_ov = j, ov
-            if best is not None:
-                used.add(best)
-                tp += 1
-        results[cls] = dict(tp=tp, fp=len(p) - tp, fn=len(t) - tp, n_pred=len(p), n_true=len(t))
+            touched = [j for j, g in enumerate(t)
+                       if e.end_ms >= g["start_ms"] - tolerance_ms
+                       and e.start_ms <= g["end_ms"] + tolerance_ms]
+            if touched:
+                tp_pred += 1
+                hit.update(touched)
+        results[cls] = dict(tp=len(hit), fp=len(p) - tp_pred, fn=len(t) - len(hit),
+                            tp_pred=tp_pred, n_pred=len(p), n_true=len(t))
     return results

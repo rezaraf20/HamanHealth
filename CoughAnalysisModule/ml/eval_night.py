@@ -17,9 +17,10 @@ from assembler import DEFAULT_PARAMS, DEFAULTS, assemble, match
 from frontend import HOP_MS, LOGGED, ROOT
 
 
-def load_nights(path: Path):
+def load_nights(path: Path, normalised: bool = True):
     d = np.load(path, allow_pickle=True)
-    scores, rms, lengths = d["scores"], d["rms"], d["lengths"]
+    key = "scores_norm" if (normalised and "scores_norm" in d.files) else "scores"
+    scores, rms, lengths = d[key], d["rms"], d["lengths"]
     truths = [json.loads(t) for t in d["truth"]]
     nights, off = [], 0
     for n, ln in enumerate(lengths):
@@ -29,7 +30,7 @@ def load_nights(path: Path):
 
 
 def evaluate(nights, params, cfg=None, verbose=False):
-    totals = {c: dict(tp=0, fp=0, fn=0, n_pred=0, n_true=0) for c in LOGGED}
+    totals = {c: dict(tp=0, fp=0, fn=0, tp_pred=0, n_pred=0, n_true=0) for c in LOGGED}
     hours = 0.0
     for scores, rms, truth in nights:
         pred = assemble(scores, rms, params, cfg)
@@ -42,7 +43,7 @@ def evaluate(nights, params, cfg=None, verbose=False):
     report = {"hours": hours, "per_class": {}}
     for c in LOGGED:
         t = totals[c]
-        prec = t["tp"] / t["n_pred"] if t["n_pred"] else 0.0
+        prec = t["tp_pred"] / t["n_pred"] if t["n_pred"] else 0.0
         rec = t["tp"] / t["n_true"] if t["n_true"] else 0.0
         f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
         report["per_class"][c] = dict(

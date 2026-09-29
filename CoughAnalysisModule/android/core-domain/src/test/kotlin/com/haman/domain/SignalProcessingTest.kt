@@ -27,29 +27,80 @@ class NoiseFloorTrackerTest {
 }
 
 class ScoreSmootherTest {
-    @Test
-    fun `median kills an isolated single-frame outlier`() {
-        val s = ScoreSmoother(alpha = 1.0f) // EMA disabled, isolating the median
-        val n = AcousticClass.ALL.size
-        fun frame(v: Float) = FloatArray(n).also { it[AcousticClass.COUGH.ordinal] = v }
+    private fun frame(v: Float) =
+        FloatArray(AcousticClass.ALL.size).also { it[AcousticClass.COUGH.ordinal] = v }
 
-        s.smooth(frame(0.0f))
-        s.smooth(frame(0.0f))
-        val spike = s.smooth(frame(1.0f))
-        assertTrue(
-            "a lone spike must be suppressed, got ${spike[AcousticClass.COUGH.ordinal]}",
-            spike[AcousticClass.COUGH.ordinal] < 0.5f,
-        )
+    /**
+     * The regression that removed the median: a cough seen confidently by only two
+     * windows must survive smoothing above a typical on-threshold. Median-3 + EMA held
+     * this peak to 0.45; EMA alone keeps it at 0.675.
+     */
+    @Test
+    fun `a short two-frame cough keeps most of its peak`() {
+        val s = ScoreSmoother(alpha = 0.5f, attackRelease = false)
+        s.smooth(frame(0f))
+        s.smooth(frame(0.9f))
+        val peak = s.smooth(frame(0.9f))[AcousticClass.COUGH.ordinal]
+        assertTrue("peak smoothed down to $peak", peak >= 0.6f)
     }
 
     @Test
-    fun `a sustained signal passes through`() {
-        val s = ScoreSmoother(alpha = 1.0f)
-        val n = AcousticClass.ALL.size
-        fun frame(v: Float) = FloatArray(n).also { it[AcousticClass.COUGH.ordinal] = v }
-        repeat(4) { s.smooth(frame(0.9f)) }
-        val out = s.smooth(frame(0.9f))
-        assertEquals(0.9f, out[AcousticClass.COUGH.ordinal], 0.05f)
+    fun `a sustained signal converges to its value`() {
+        val s = ScoreSmoother(alpha = 0.5f)
+        repeat(8) { s.smooth(frame(0.9f)) }
+        assertEquals(0.9f, s.smooth(frame(0.9f))[AcousticClass.COUGH.ordinal], 0.01f)
+    }
+}
+
+class AttackReleaseTest {
+    private fun frame(v: Float) =
+        FloatArray(AcousticClass.ALL.size).also { it[AcousticClass.COUGH.ordinal] = v }
+
+    /** Plain EMA turned a single-frame 0.60 cough into 0.30, under the threshold. */
+    @Test
+    fun `a single-frame peak is kept intact and only the decay is smoothed`() {
+        val s = ScoreSmoother(alpha = 0.5f, attackRelease = true)
+        s.smooth(frame(0f))
+        assertEquals(0.6f, s.smooth(frame(0.6f))[AcousticClass.COUGH.ordinal], 1e-6f)
+        assertEquals(0.3f, s.smooth(frame(0f))[AcousticClass.COUGH.ordinal], 1e-6f)
+    }
+}
+
+class InputNormalizerTest {
+    @Test
+    fun `quiet input is boosted to the target peak`() {
+        val x = FloatArray(100) { if (it == 50) 0.05f else 0.01f }
+        val out = FloatArray(100)
+        val g = InputNormalizer.normalize(x, out)
+        assertEquals(10f, g, 1e-3f)
+        assertEquals(InputNormalizer.TARGET_PEAK, out.maxOf { kotlin.math.abs(it) }, 1e-4f)
+    }
+
+    @Test
+    fun `loud input is never attenuated`() {
+        val x = FloatArray(100) { if (it == 10) 0.9f else 0.1f }
+        val out = FloatArray(100)
+        assertEquals(1f, InputNormalizer.normalize(x, out), 0f)
+        assertEquals(0.9f, out[10], 0f)
+    }
+
+    @Test
+    fun `gain is capped so near-silence is not amplified without limit`() {
+        val x = FloatArray(100) { 1e-5f }
+        val out = FloatArray(100)
+        val g = InputNormalizer.normalize(x, out)
+        assertEquals(31.62f, g, 0.05f) // +30 dB
+    }
+
+    /** Pinned to values computed by ml/frontend.normalise, so the two cannot drift. */
+    @Test
+    fun `matches the python frontend`() {
+        val x = floatArrayOf(0.02f, -0.04f, 0.01f)
+        val out = FloatArray(3)
+        InputNormalizer.normalize(x, out)
+        assertEquals(0.25f, out[0], 1e-5f)
+        assertEquals(-0.5f, out[1], 1e-5f)
+        assertEquals(0.125f, out[2], 1e-5f)
     }
 }
 
@@ -283,7 +334,7 @@ class CoughSneezeExclusionTest {
 
     @Test
     fun `a sneeze that also scores high on cough is logged once, as a sneeze`() {
-        val events = pipelineWith(coughScore = 0.80f, sneezeScore = 0.95f)
+        val events = pipelineWith(coughScore = 0.70f, sneezeScore = 0.95f)
         assertEquals("one physical event must produce one row, got $events", 1, events.size)
         assertEquals(AcousticClass.SNEEZE, events[0].cls)
     }
@@ -364,6 +415,24 @@ class DurationCeilingTest {
     }
 }
 
+class SneezeMarginTest {
+    /** On-device a cough scoring 0.71 cough / 0.72 sneeze was logged as a sneeze. */
+    @Test
+    fun `a near-tie between cough and sneeze goes to cough`() {
+        val pipeline = DetectionPipeline(DetectorConfig.DEFAULT, frameHopMs = 480L)
+        val silence = FloatArray(YamnetLabels.NUM_YAMNET_CLASSES)
+        val events = mutableListOf<DetectedEvent>()
+        repeat(40) { i -> events += pipeline.onFrame(i * 480L, -70f) { FrameInference(silence, null) }.events }
+        val raw = FloatArray(YamnetLabels.NUM_YAMNET_CLASSES)
+        raw[YamnetLabels.COUGH] = 0.71f; raw[YamnetLabels.SNEEZE] = 0.72f
+        repeat(4) { i -> events += pipeline.onFrame((40 + i) * 480L, -25f) { FrameInference(raw, null) }.events }
+        repeat(12) { i -> events += pipeline.onFrame((44 + i) * 480L, -70f) { FrameInference(silence, null) }.events }
+        events += pipeline.flush(60 * 480L).events
+        assertEquals(1, events.size)
+        assertEquals(AcousticClass.COUGH, events[0].cls)
+    }
+}
+
 class ExclusionBandTest {
     /**
      * With a tuned cough on-threshold of 0.10 and a fixed exclusion threshold of 0.20,
@@ -399,5 +468,42 @@ class ExclusionBandTest {
         assertTrue("one sound was logged as both a cough and a sneeze: $events", !coincident)
         assertEquals("expected a single sneeze", 1, events.size)
         assertEquals(AcousticClass.SNEEZE, events[0].cls)
+    }
+}
+
+class SpectralStatsTest {
+    private val sr = 16000
+
+    @Test
+    fun `white noise is full band`() {
+        val rng = java.util.Random(1)
+        val x = FloatArray(sr * 2) { (rng.nextGaussian() * 0.1).toFloat() }
+        val b = SpectralStats.bands(x, sr)
+        assertTrue("white noise should be roughly flat, got ${b.highMinusLowDb}",
+            kotlin.math.abs(b.highMinusLowDb) < 3f)
+        assertTrue(!b.looksBandLimited)
+    }
+
+    @Test
+    fun `a telephony-band signal is detected as band-limited`() {
+        // Energy only below 3.4 kHz, plus 16-bit quantisation noise - what a
+        // narrowband voice path hands back.
+        val rng = java.util.Random(2)
+        val x = FloatArray(sr * 2) { i ->
+            var v = 0.0
+            for (f in listOf(300.0, 700.0, 1200.0, 2100.0, 3100.0))
+                v += 0.05 * kotlin.math.sin(2 * Math.PI * f * i / sr + f)
+            (Math.round((v + rng.nextGaussian() * 0.002) * 32767) / 32767.0).toFloat()
+        }.also { lowpassInPlace(it) }
+        val b = SpectralStats.bands(x, sr)
+        assertTrue("expected band-limited, got hi-lo ${b.highMinusLowDb} dB", b.looksBandLimited)
+    }
+
+    /** Steep low-pass so broadband quantisation noise above 4 kHz is removed. */
+    private fun lowpassInPlace(x: FloatArray) {
+        repeat(8) { // cascaded one-pole sections ~ steep roll-off
+            var y = 0f
+            for (i in x.indices) { y += 0.55f * (x[i] - y); x[i] = y }
+        }
     }
 }

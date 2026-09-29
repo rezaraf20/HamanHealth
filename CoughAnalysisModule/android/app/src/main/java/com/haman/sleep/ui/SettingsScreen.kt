@@ -11,7 +11,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun SettingsScreen(vm: MainViewModel) {
+fun SettingsScreen(vm: MainViewModel, onOpenDiagnostics: () -> Unit) {
     var sensitivity by remember { mutableFloatStateOf(vm.prefs.readSensitivity()) }
     var keepClips by remember { mutableStateOf(vm.prefs.readKeepClips()) }
     var retention by remember { mutableIntStateOf(vm.prefs.readRetentionDays()) }
@@ -98,6 +98,17 @@ fun SettingsScreen(vm: MainViewModel) {
                 progress = { (labelCount / 30f).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+
+        HorizontalDivider()
+
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Microphone", style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold)
+            Text("Route: ${vm.prefs.readAudioRoute() ?: "default order"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onOpenDiagnostics) { Text("Run microphone diagnostics") }
         }
 
         HorizontalDivider()

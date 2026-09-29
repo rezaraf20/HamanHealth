@@ -10,17 +10,23 @@ android {
         applicationId = "com.haman.sleep"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         // On-device tests: the model wrapper and the database can only be exercised
         // against a real TFLite runtime and a real SQLite, not on the JVM.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
         release {
+            // R8 stays off until keep rules for TFLite and kotlinx.serialization are
+            // verified on device; a mis-shrunk model loader fails only at runtime.
             isMinifyEnabled = false
-            // Debug-signed release builds would still need a keystore; the debug
-            // variant is what gets sideloaded for testing.
+            // Signed with the debug key so the APK installs directly by sideloading, with
+            // no keystore to manage. It is still a release build: not debuggable, so
+            // `adb run-as` cannot copy the sleep log and clips off the phone, and the
+            // debug-only raw audio dump is disabled. Use a real release key before any
+            // store distribution.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     buildFeatures { compose = true }

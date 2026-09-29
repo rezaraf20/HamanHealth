@@ -22,6 +22,11 @@ class Prefs(context: Context) {
     fun readRetentionDays(): Int = sp.getInt(KEY_RETENTION_DAYS, 14)
     fun writeRetentionDays(v: Int) = sp.edit().putInt(KEY_RETENTION_DAYS, v).apply()
 
+    /** Route chosen by the microphone diagnostics, e.g. "CAMCORDER@48k". Null means
+     *  use the default order. */
+    fun readAudioRoute(): String? = sp.getString(KEY_AUDIO_ROUTE, null)
+    fun writeAudioRoute(v: String?) = sp.edit().putString(KEY_AUDIO_ROUTE, v).apply()
+
     fun readCalibration(): ProximityCalibration? {
         val n = sp.getInt(KEY_CAL_COUNT, 0)
         if (n < ProximityCalibration.MIN_SAMPLES) return null
@@ -48,5 +53,6 @@ class Prefs(context: Context) {
         const val KEY_CAL_MEAN = "cal_mean_db"
         const val KEY_CAL_SD = "cal_sd_db"
         const val KEY_CAL_COUNT = "cal_count"
+        const val KEY_AUDIO_ROUTE = "audio_route"
     }
 }

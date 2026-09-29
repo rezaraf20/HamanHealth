@@ -6,95 +6,100 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.os.Build
 import android.util.Log
 import kotlin.math.log10
 import kotlin.math.sqrt
 
 /**
- * Microphone capture tuned for level-faithful analysis.
+ * Microphone capture that always delivers 16 kHz mono PCM to the pipeline, from
+ * whichever source and native rate gives the most faithful signal on this phone.
  *
- * The audio *source* matters more than it looks. MediaRecorder.AudioSource.MIC applies
- * automatic gain control, which amplifies a quiet distant cough until it looks like a
- * near one - destroying the level evidence the proximity prior in the attribution layer
- * depends on. UNPROCESSED is requested when the device advertises it, falling back to
- * VOICE_RECOGNITION (AGC off on most devices) and only then to MIC. Which one was
- * actually used is reported so it can be recorded with the session; results are not
- * comparable across sources.
+ * Which Android audio source is best is device-specific, and choosing wrong fails
+ * silently. MIC applies automatic gain control; VOICE_RECOGNITION is AGC-free on most
+ * phones but on some it is routed through narrowband voice processing that cuts
+ * everything above ~4 kHz - where much of a cough lives. The app worked on Samsung
+ * flagships and missed most coughs on budget phones, consistent with exactly that.
+ * [AudioSourceProbe] measures each route, and the chosen [Route] is passed in here.
  */
-class AudioCapture(
-    private val context: Context,
-    private val sampleRate: Int = 16000,
-) {
-    enum class Source { UNPROCESSED, VOICE_RECOGNITION, MIC }
+class AudioCapture(private val context: Context) {
+
+    enum class Source(val androidSource: Int) {
+        UNPROCESSED(MediaRecorder.AudioSource.UNPROCESSED),
+        VOICE_RECOGNITION(MediaRecorder.AudioSource.VOICE_RECOGNITION),
+        CAMCORDER(MediaRecorder.AudioSource.CAMCORDER),
+        MIC(MediaRecorder.AudioSource.MIC),
+    }
+
+    /** A source plus the rate it is captured at. At 48 kHz the stream is decimated to
+     *  16 kHz internally, for phones that only deliver full band at their native rate. */
+    data class Route(val source: Source, val captureRate: Int) {
+        override fun toString() = "${source.name}@${captureRate / 1000}k"
+
+        companion object {
+            fun parse(s: String?): Route? = runCatching {
+                val (src, rate) = s!!.split("@")
+                Route(Source.valueOf(src), rate.removeSuffix("k").toInt() * 1000)
+            }.getOrNull()
+        }
+    }
 
     private var record: AudioRecord? = null
+    private var decimator: Decimator3? = null
     @Volatile private var running = false
 
-    var activeSource: Source = Source.MIC
+    var activeRoute: Route = Route(Source.MIC, OUTPUT_RATE)
         private set
 
-    /** True when the device confirms it can deliver an unprocessed signal path. */
     fun supportsUnprocessed(): Boolean {
         val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         return am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true"
     }
 
+    /** Order tried when no cough-test result is stored. See [DEFAULT_ORDER]. */
+    fun defaultRoutes(): List<Route> =
+        DEFAULT_ORDER.map { Route(it, OUTPUT_RATE) }
+
     @SuppressLint("MissingPermission") // caller holds RECORD_AUDIO; enforced by the service
-    fun start(): Boolean {
-        val minBuf = AudioRecord.getMinBufferSize(
-            sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuf <= 0) {
-            Log.e(TAG, "getMinBufferSize failed: $minBuf")
-            return false
-        }
-        // A generous buffer: this thread must survive being descheduled while the
-        // device is dozing without dropping audio.
-        val bufferSize = maxOf(minBuf * 4, sampleRate) // >= 1 s
-
+    fun start(preferred: Route? = null): Boolean {
         val candidates = buildList {
-            if (supportsUnprocessed()) add(Source.UNPROCESSED to MediaRecorder.AudioSource.UNPROCESSED)
-            add(Source.VOICE_RECOGNITION to MediaRecorder.AudioSource.VOICE_RECOGNITION)
-            add(Source.MIC to MediaRecorder.AudioSource.MIC)
+            preferred?.let(::add)
+            defaultRoutes().filter { it != preferred }.forEach(::add)
         }
-
-        for ((label, source) in candidates) {
-            val r = try {
-                AudioRecord(source, sampleRate, AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT, bufferSize)
-            } catch (e: Exception) {
-                Log.w(TAG, "source $label unavailable", e); null
-            }
-            if (r != null && r.state == AudioRecord.STATE_INITIALIZED) {
-                record = r
-                activeSource = label
-                r.startRecording()
-                running = true
-                Log.i(TAG, "capture started on $label at $sampleRate Hz")
-                return true
-            }
-            r?.release()
+        for (route in candidates) {
+            val r = open(route) ?: continue
+            record = r
+            activeRoute = route
+            decimator = if (route.captureRate == 48000) Decimator3() else null
+            r.startRecording()
+            running = true
+            Log.i(TAG, "capture started on $route")
+            return true
         }
-        Log.e(TAG, "no usable audio source")
+        Log.e(TAG, "no usable audio route")
         return false
     }
 
     /**
-     * Blocking read loop. Runs on a dedicated thread owned by the caller.
-     * @param onAudio receives raw PCM plus the running absolute sample position.
+     * Blocking read loop on the caller's thread. Always delivers 16 kHz samples,
+     * decimating when capturing at 48 kHz.
      */
     fun readLoop(onAudio: (ShortArray, Int) -> Unit) {
         val r = record ?: return
-        val chunk = ShortArray(sampleRate / 10) // 100 ms
+        val dec = decimator
+        val chunk = ShortArray(activeRoute.captureRate / 10) // 100 ms
+        val out = ShortArray(OUTPUT_RATE / 10 + 4)
         while (running) {
             val n = r.read(chunk, 0, chunk.size)
             if (n > 0) {
-                onAudio(chunk, n)
+                if (dec != null) {
+                    val m = dec.process(chunk, n, out)
+                    if (m > 0) onAudio(out, m)
+                } else {
+                    onAudio(chunk, n)
+                }
             } else if (n == AudioRecord.ERROR_INVALID_OPERATION || n == AudioRecord.ERROR_DEAD_OBJECT) {
-                // The mic was taken - a phone call, or another app with priority.
-                // Surfacing this rather than spinning is what lets the service log an
-                // explicit gap instead of silently losing hours.
+                // The mic was taken (a call, another app). Surfacing this lets the
+                // service log an explicit gap instead of silently losing hours.
                 Log.w(TAG, "read failed ($n); microphone lost")
                 running = false
             }
@@ -114,8 +119,37 @@ class AudioCapture(
 
     companion object {
         private const val TAG = "AudioCapture"
+        const val OUTPUT_RATE = 16000
 
-        /** Convert 16-bit PCM to normalised floats in [-1, 1]. */
+        /**
+         * Measured, not assumed (see AudioSourceProbe for the numbers): on a Galaxy S23
+         * CAMCORDER kept coughs intact where VOICE_RECOGNITION's noise suppression
+         * damaged them, and UNPROCESSED arrived ~18 dB too quiet. Phones differ, which
+         * is what the diagnostics cough test is for; this is only the fallback.
+         */
+        val DEFAULT_ORDER = listOf(
+            Source.CAMCORDER, Source.VOICE_RECOGNITION, Source.MIC, Source.UNPROCESSED,
+        )
+
+        @SuppressLint("MissingPermission")
+        internal fun open(route: Route): AudioRecord? {
+            val minBuf = AudioRecord.getMinBufferSize(
+                route.captureRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+            )
+            if (minBuf <= 0) return null
+            // >= 1 s of buffer: the thread must survive being descheduled while the
+            // device dozes without dropping audio.
+            val size = maxOf(minBuf * 4, route.captureRate * 2)
+            val r = try {
+                AudioRecord(route.source.androidSource, route.captureRate,
+                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, size)
+            } catch (e: Exception) {
+                Log.w(TAG, "route $route unavailable", e); return null
+            }
+            if (r.state != AudioRecord.STATE_INITIALIZED) { r.release(); return null }
+            return r
+        }
+
         fun toFloat(src: ShortArray, count: Int, dst: FloatArray) {
             for (i in 0 until count) dst[i] = src[i] / 32768f
         }

@@ -21,6 +21,7 @@ class AssemblerParityTest {
         val hop_ms: Long,
         val classes: List<String>,
         val params: Map<String, PyParams>,
+        val rules: PyRules,
         val scores: List<List<Float>>,
         val rms_db: List<Float>,
         val expected_events: List<PyEvent>,
@@ -33,6 +34,12 @@ class AssemblerParityTest {
         // Must be mapped explicitly: ignoreUnknownKeys would silently substitute
         // ClassParams' 3000 ms default for snore's 6000 ms and change the event count.
         val max_dur: Long,
+    )
+
+    @Serializable
+    private data class PyRules(
+        val smoothing: String, val speech_sustain: Int,
+        val speech_window: Int, val sneeze_margin: Float,
     )
 
     @Serializable
@@ -57,7 +64,11 @@ class AssemblerParityTest {
         val config = DetectorConfig.DEFAULT.copy(
             params = f.params.mapValues { (_, p) ->
                 ClassParams(p.on, p.off, p.min_dur, p.merge_gap, p.refractory, p.max_dur)
-            } + DetectorConfig.defaultParams.filterKeys { it !in f.params }
+            } + DetectorConfig.defaultParams.filterKeys { it !in f.params },
+            attackRelease = f.rules.smoothing == "attack_release",
+            speechSustainFrames = f.rules.speech_sustain,
+            speechWindowFrames = f.rules.speech_window,
+            sneezeMargin = f.rules.sneeze_margin,
         )
 
         // Drive the full pipeline, so the noise gate, smoother and cough/sneeze

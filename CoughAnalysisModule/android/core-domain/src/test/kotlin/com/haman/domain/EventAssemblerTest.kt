@@ -108,13 +108,20 @@ class EventAssemblerTest {
 
     @Test
     fun `sustained speech suppresses new events`() {
-        val speech = List(8) { 0.9f }
-        val events = run(
-            AcousticClass.COUGH,
-            listOf(0.0f, 0.8f, 0.8f, 0.8f, 0.0f, 0.0f, 0.0f, 0.0f),
-            speech = speech,
-        )
+        // Several seconds of talking, then a cough-like score: TV or conversation.
+        val speech = List(12) { 0.9f }
+        val cough = List(12) { i -> if (i in 6..8) 0.8f else 0f }
+        val events = run(AcousticClass.COUGH, cough, speech = speech)
         assertTrue("talking should suppress detection, got $events", events.isEmpty())
+    }
+
+    @Test
+    fun `a single speech-scoring frame does not suppress a cough`() {
+        // A voiced cough can score high on Speech for one frame. On-device that alone
+        // used to block real coughs; speech has to be sustained to suppress.
+        val speech = listOf(0f, 0.95f, 0f, 0f, 0f, 0f, 0f, 0f)
+        val events = run(AcousticClass.COUGH, listOf(0f, 0.8f, 0.8f, 0.8f, 0f, 0f, 0f, 0f), speech = speech)
+        assertEquals(1, events.size)
     }
 
     @Test

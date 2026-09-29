@@ -44,16 +44,17 @@ def sweep_class(preps, truths, cls, budget, grid):
                                         merge_gap=merge_gap,
                                         refractory=DEFAULT_PARAMS[cls]["refractory"],
                                         max_dur=DEFAULT_PARAMS[cls]["max_dur"])}
-                    tp = fp = fn = n_true = 0
+                    tp = fp = fn = n_true = tp_pred = n_pred = 0
                     for prep, truth in zip(preps, truths):
                         pred = assemble_prepared(prep, params)
                         r = match(pred, truth)[cls]
                         tp += r["tp"]; fp += r["fp"]; fn += r["fn"]; n_true += r["n_true"]
+                        tp_pred += r["tp_pred"]; n_pred += r["n_pred"]
                     if n_true == 0:
                         continue
                     recall = tp / n_true
                     fa_h = fp / hours
-                    prec = tp / (tp + fp) if (tp + fp) else 0.0
+                    prec = tp_pred / n_pred if n_pred else 0.0
                     row = dict(on=on, off=off, min_dur=min_dur, merge_gap=merge_gap,
                                recall=recall, precision=prec, fa_per_hour=fa_h)
                     frontier.append(row)
@@ -73,17 +74,25 @@ def main() -> None:
     ap.add_argument("--out", type=Path,
                     default=ROOT / "android/app/src/main/assets/detector_config.json")
     ap.add_argument("--report", type=Path, default=ROOT / "results/threshold_tuning.json")
+    ap.add_argument("--smoothing", choices=["ema", "attack_release"], default="attack_release")
+    ap.add_argument("--speech-sustain", type=int, default=4)
+    ap.add_argument("--sneeze-margin", type=float, default=0.15)
     args = ap.parse_args()
+    rules = dict(smoothing=args.smoothing, speech_sustain=args.speech_sustain,
+                 sneeze_margin=args.sneeze_margin)
+    print("rules:", rules)
 
     nights, _ = load_nights(args.nights)
     print(f"preparing {len(nights)} nights ...")
-    preps = [prepare(s, r) for s, r, _ in nights]
+    preps = [prepare(s, r, rules) for s, r, _ in nights]
     truths = [t for _, _, t in nights]
 
     grid = dict(
-        on=[round(x, 2) for x in np.arange(0.10, 0.65, 0.05)],
+        # Up to 0.95: attack-release smoothing preserves raw peaks, so it needs higher
+        # on-thresholds than plain EMA to hold the same false-alarm budget.
+        on=[round(x, 2) for x in np.arange(0.10, 0.96, 0.05)],
         off_ratio=[0.4, 0.55, 0.7],
-        min_dur=[600, 960],
+        min_dur=[600, 960, 1440],
         merge_gap=[720, 1200, 1500, 2000],
     )
 
@@ -92,9 +101,10 @@ def main() -> None:
         print(f"sweeping {cls} ({len(grid['on']) * 3 * 2 * 4} combinations) ...")
         best, frontier = sweep_class(preps, truths, cls, args.budget, grid)
         if best is None:
-            print(f"  no setting met the budget; keeping defaults for {cls}")
-            best = dict(**{k: DEFAULT_PARAMS[cls][k] for k in ("on", "off", "min_dur", "merge_gap")},
-                        recall=0.0, precision=0.0, fa_per_hour=0.0)
+            # Never fall back to defaults silently: that once wrote untuned thresholds
+            # into the app's config while reporting success.
+            raise SystemExit(f"no setting met the {args.budget} FA/h budget for {cls}; "
+                             f"widen the grid or relax the budget. Config NOT written.")
         tuned[cls] = best
         report[cls] = dict(best=best, frontier=sorted(
             frontier, key=lambda r: -r["recall"])[:20])
@@ -120,8 +130,10 @@ def main() -> None:
 
     config = dict(
         params=params_json, gateMarginDb=6.0, speechSuppressionThreshold=0.55,
-        coughSneezeExclusionThreshold=0.20, coughBoutGapMs=3000,
-        snoreEpisodeGapMs=60000, emaAlpha=0.5,
+        speechSustainFrames=args.speech_sustain, speechWindowFrames=5,
+        coughSneezeExclusionThreshold=0.20, sneezeMargin=args.sneeze_margin,
+        coughBoutGapMs=3000, snoreEpisodeGapMs=60000, emaAlpha=0.5,
+        attackRelease=args.smoothing == "attack_release",
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(config, indent=2))
@@ -134,8 +146,8 @@ def main() -> None:
                             min_dur=tuned[c]["min_dur"], merge_gap=tuned[c]["merge_gap"],
                             refractory=DEFAULT_PARAMS[c]["refractory"],
                             max_dur=DEFAULT_PARAMS[c]["max_dur"]) for c in LOGGED}
-    print_report(evaluate(nights, DEFAULT_PARAMS), "BEFORE (defaults)")
-    print_report(evaluate(nights, tuned_params), "AFTER (tuned)")
+    print_report(evaluate(nights, DEFAULT_PARAMS, rules), "BEFORE (defaults)")
+    print_report(evaluate(nights, tuned_params, rules), "AFTER (tuned)")
 
 
 if __name__ == "__main__":

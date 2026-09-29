@@ -19,6 +19,7 @@ fun HomeScreen(
     onStop: () -> Unit,
     batteryExempt: Boolean,
     onRequestBatteryExemption: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
 ) {
     val live by vm.live.collectAsState()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -54,6 +55,20 @@ fun HomeScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                     TextButton(onClick = onRequestBatteryExemption) { Text("Allow background running") }
+                }
+            }
+        }
+
+        if (live.bandLimited == true) {
+            Card(colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Microphone is cutting off high frequencies",
+                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text("On this route most coughs will be missed. Stop monitoring and run " +
+                        "the microphone diagnostics to pick a better one.",
+                        style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onOpenDiagnostics) { Text("Open diagnostics") }
                 }
             }
         }

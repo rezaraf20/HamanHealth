@@ -1,0 +1,28 @@
+{
+ "cfg_ema": {
+  "dev_loud": 0.5,
+  "dev_quiet": 0.25,
+  "dev_other_events": 1,
+  "held_bedside": 0.86,
+  "held_far": 0.85,
+  "night_COUGH_recall": 0.825,
+  "night_COUGH_fah": 0.7504002134471719,
+  "night_SNEEZE_recall": 0.25,
+  "night_SNEEZE_fah": 0.5002668089647813,
+  "night_SNORE_recall": 0.9717314487632509,
+  "night_SNORE_fah": 0.7504002134471719
+ },
+ "cfg_attack_release": {
+  "dev_loud": 0.6666666666666666,
+  "dev_quiet": 0.25,
+  "dev_other_events": 2,
+  "held_bedside": 0.87,
+  "held_far": 0.87,
+  "night_COUGH_recall": 0.8166666666666667,
+  "night_COUGH_fah": 0.7504002134471719,
+  "night_SNEEZE_recall": 0.25,
+  "night_SNEEZE_fah": 0.25013340448239063,
+  "night_SNORE_recall": 0.9717314487632509,
+  "night_SNORE_fah": 0.5002668089647813
+ }
+}

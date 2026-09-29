@@ -36,6 +36,9 @@ class EventAssembler(
     }
 
     private val states = Array(AcousticClass.ALL.size) { ClassState() }
+    // Recent speech flags, for the sustained-speech rule.
+    private var speechFlags = BooleanArray(config.speechWindowFrames.coerceAtLeast(1))
+    private var speechIdx = 0
     private var lastCoughEndMs = Long.MIN_VALUE
     private var currentBoutId = 0L
 
@@ -57,11 +60,15 @@ class EventAssembler(
     ): List<DetectedEvent> {
         var emitted: MutableList<DetectedEvent>? = null
 
-        // Sustained talking suppresses new events. People talking, a TV or a radio are
-        // the dominant false-positive source, and none of them are sleep events. The
-        // threshold is high so that the speech-like fringe of a real cough does not
-        // suppress the cough itself.
-        val speechActive = smoothed[AcousticClass.SPEECH.ordinal] >= config.speechSuppressionThreshold
+        // Sustained talking suppresses new events: people talking, a TV or a radio are
+        // not sleep events. "Sustained" matters - a voiced cough can score high on Speech
+        // for a frame, so a single frame must not be enough.
+        if (speechFlags.size != config.speechWindowFrames.coerceAtLeast(1)) {
+            speechFlags = BooleanArray(config.speechWindowFrames.coerceAtLeast(1)); speechIdx = 0
+        }
+        speechFlags[speechIdx] = smoothed[AcousticClass.SPEECH.ordinal] >= config.speechSuppressionThreshold
+        speechIdx = (speechIdx + 1) % speechFlags.size
+        val speechActive = speechFlags.count { it } >= config.speechSustainFrames
 
         for (cls in AcousticClass.LOGGED) {
             val st = states[cls.ordinal]
@@ -154,6 +161,7 @@ class EventAssembler(
     }
 
     fun reset() {
+        java.util.Arrays.fill(speechFlags, false); speechIdx = 0
         states.forEach { it.reset(); it.refractoryUntilMs = Long.MIN_VALUE }
         lastCoughEndMs = Long.MIN_VALUE
         currentBoutId = 0L

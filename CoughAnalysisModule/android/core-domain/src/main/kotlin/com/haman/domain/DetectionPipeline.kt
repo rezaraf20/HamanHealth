@@ -32,7 +32,7 @@ class DetectionPipeline(
         private set
 
     private val noiseFloor = NoiseFloorTracker()
-    private var smoother = ScoreSmoother(config.emaAlpha)
+    private var smoother = ScoreSmoother(this.config.emaAlpha, this.config.attackRelease)
     private val assembler = EventAssembler(this.config, frameHopMs)
     private val rollup = MinuteRollupAccumulator()
     private var snoreEpisodes = SnoreEpisodeAggregator(config.snoreEpisodeGapMs)
@@ -56,7 +56,7 @@ class DetectionPipeline(
     fun updateConfig(newConfig: DetectorConfig) {
         config = newConfig.validatedFor(frameHopMs)
         assembler.updateConfig(config)
-        smoother = ScoreSmoother(config.emaAlpha)
+        smoother = ScoreSmoother(config.emaAlpha, config.attackRelease)
         snoreEpisodes = SnoreEpisodeAggregator(config.snoreEpisodeGapMs)
     }
 
@@ -145,7 +145,8 @@ class DetectionPipeline(
             config.paramsFor(AcousticClass.SNEEZE).onThreshold,
         )
         if (scores[c] >= t && scores[s] >= t) {
-            if (scores[c] >= scores[s]) scores[s] = 0f else scores[c] = 0f
+            // Sneeze must win by a margin; near-ties go to the far more common cough.
+            if (scores[s] >= scores[c] + config.sneezeMargin) scores[c] = 0f else scores[s] = 0f
         }
     }
 

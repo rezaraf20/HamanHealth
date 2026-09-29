@@ -27,6 +27,8 @@ object MonitorState {
         val lastEventAt: Long = 0,
         val lastEventClass: AcousticClass? = null,
         val micGapMs: Long = 0,
+        /** null until enough loud audio has been heard to judge. */
+        val bandLimited: Boolean? = null,
         val error: String? = null,
     )
 

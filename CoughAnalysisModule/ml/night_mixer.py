@@ -1,38 +1,66 @@
 #!/usr/bin/env python3
 """Synthesise nights with exact ground truth, then cache their model scores.
 
-Clip-level metrics (eval_esc50.py) cannot predict overnight behaviour: what matters is
-how many false events accumulate over 8 hours of mostly-silence, and that depends on
-the event assembler, not the classifier. Real annotated night recordings do not exist
-here, so nights are built from ESC-50 events mixed into room noise at known times.
+Clip-level metrics cannot predict overnight behaviour: what matters is how many false
+events accumulate over hours of mostly-silence, which depends on the event assembler,
+not the classifier. Annotated real nights do not exist here, so nights are built from
+real recordings mixed into room noise at known times.
 
-Scores are computed once and cached to .npz so threshold sweeps are pure numpy and
-cost nothing - retuning does not mean re-running the model.
+Coughs come mainly from COUGHVID - real users' own phones - rather than ESC-50. The
+first version used ESC-50 only; its cough clips are clean, loud, multi-cough bouts, and
+thresholds tuned on them missed most real single coughs on budget phones. Placed
+events span a wide level range (0 to -28 dB) because level is the dominant factor in
+YAMNet's recall (results/recall_diagnosis.json).
+
+COUGHVID is split deterministically: split 0 is held out for diagnose_recall.py so the
+reported recall is not measured on tuning data.
+
+Scores are cached twice - with and without input normalisation - so the effect of
+normalisation on false alarms can be measured on identical audio.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import zlib
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import soundfile as sf
 
-from frontend import (ROOT, SAMPLE_RATE, frame_audio, load_interpreter,
-                      reduce_scores, rms_db, run_frames, HOP_SAMPLES, FRAME_SAMPLES)
+from frontend import (ROOT, SAMPLE_RATE, frame_audio, load_interpreter, normalise,
+                      reduce_scores, rms_db, run_frames)
 
-TARGET = {"coughing": "COUGH", "sneezing": "SNEEZE", "snoring": "SNORE"}
-
-# Categories that plausibly occur in or near a bedroom at night. Chosen deliberately to
-# include the confusions eval_esc50.py surfaced (breathing, drinking, insects) rather
-# than easy negatives, so the tuned thresholds are tested against the hard cases.
 DISTRACTORS = [
     "breathing", "drinking_sipping", "insects", "clock_tick", "clock_alarm",
     "door_wood_knock", "mouse_click", "keyboard_typing", "wind", "rain",
     "toilet_flush", "water_drops", "footsteps", "laughing", "crying_baby",
     "vacuum_cleaner", "washing_machine", "car_horn", "siren", "crickets",
+    "dog", "cat", "door_wood_creaks", "sneezing_decoy",
 ]
+# Placement levels relative to a -6 dBFS-peak source, and their probabilities.
+# Skewed quiet on purpose: a nightstand phone rarely hears a cough at full scale.
+LEVELS_DB = [0, -8, -15, -22, -28]
+LEVEL_P = [0.15, 0.2, 0.3, 0.2, 0.15]
+
+
+def coughvid_split(name: str) -> int:
+    return zlib.crc32(name.encode()) % 5
+
+
+def coughvid_files(split_held_out: bool, min_conf: float = 0.9):
+    root = ROOT / "Datasets/COUGHVID"
+    out = []
+    for js in sorted(root.glob("*.json")):
+        wav = js.with_suffix(".wav")
+        if not wav.exists():
+            continue
+        if (coughvid_split(wav.name) == 0) != split_held_out:
+            continue
+        if float(json.loads(js.read_text()).get("cough_detected", 0)) >= min_conf:
+            out.append(wav)
+    return out
 
 
 def load_16k(path: Path) -> np.ndarray:
@@ -45,108 +73,79 @@ def load_16k(path: Path) -> np.ndarray:
     return a
 
 
-def trim(a: np.ndarray, thresh_db: float = -45.0) -> np.ndarray:
-    """ESC-50 clips are 5 s with the event somewhere inside; keep the active part so
-    placement timing means something."""
+def trim(a: np.ndarray, rel_db: float = -30.0) -> np.ndarray:
+    """Keep the active part, relative to the clip's own peak."""
     win = 512
-    if len(a) < win * 2:
-        return a
     frames = len(a) // win
+    if frames < 2:
+        return a
     e = np.array([rms_db(a[i * win:(i + 1) * win]) for i in range(frames)])
-    active = np.where(e > thresh_db)[0]
+    active = np.where(e > e.max() + rel_db)[0]
     if len(active) == 0:
         return a
     return a[active[0] * win: min(len(a), (active[-1] + 1) * win)]
 
 
-def attenuate(a: np.ndarray, distance_m: float, rng) -> np.ndarray:
-    """Crude but directionally correct distance model.
-
-    Two effects that matter for the proximity prior: inverse-square level loss, and
-    high-frequency roll-off, since air and bedding absorb treble faster than bass. A
-    convolutional room impulse response would be better but needs data we do not have.
-    """
-    gain = 1.0 / max(distance_m, 0.3) ** 1.0
-    out = a * gain
-    if distance_m > 1.0:
-        # One-pole lowpass; stronger with distance.
-        alpha = np.clip(0.45 / distance_m, 0.05, 0.45)
-        y = np.zeros_like(out)
-        acc = 0.0
-        for i in range(len(out)):
-            acc = alpha * out[i] + (1 - alpha) * acc
-            y[i] = acc
-        out = y * 1.6
-    return out.astype(np.float32)
+def lowpass(a, cutoff):
+    from scipy.signal import butter, sosfilt
+    return sosfilt(butter(4, cutoff, fs=SAMPLE_RATE, output="sos"), a).astype(np.float32)
 
 
-def room_noise(n: int, level_db: float, rng) -> np.ndarray:
-    """Brown-ish noise: a bedroom floor is low-frequency dominated (traffic, HVAC)."""
-    white = rng.standard_normal(n).astype(np.float32)
-    brown = np.cumsum(white)
-    brown -= brown.mean()
-    brown /= (np.abs(brown).max() + 1e-9)
-    target = 10 ** (level_db / 20.0)
-    rms = np.sqrt(np.mean(brown ** 2)) + 1e-9
-    return (brown * (target / rms)).astype(np.float32)
+def room_noise(n, level_db, rng):
+    b = np.cumsum(rng.standard_normal(n)).astype(np.float32)
+    b -= b.mean()
+    b /= np.sqrt(np.mean(b ** 2)) + 1e-9
+    return b * 10 ** (level_db / 20)
 
 
-def build_night(meta, audio_dir, minutes, seed, floor_db):
+def build_night(meta, audio_dir, cv_files, minutes, seed, floor_db):
     rng = np.random.default_rng(seed)
     n = int(minutes * 60 * SAMPLE_RATE)
     night = room_noise(n, floor_db, rng)
     truth = []
+    dur_s = minutes * 60
 
-    pool = {}
-    for cat in list(TARGET) + DISTRACTORS:
+    def esc(cat):
         files = meta[meta.category == cat].filename.tolist()
-        if files:
-            pool[cat] = files
+        return audio_dir / rng.choice(files) if files else None
 
-    def place(cat, cls, t_s, distance):
-        files = pool.get(cat)
-        if not files:
+    def place(path, cls, t_s, level_db):
+        if path is None:
             return
-        clip = trim(load_16k(audio_dir / rng.choice(files)))
-        clip = attenuate(clip, distance, rng)
+        clip = trim(load_16k(path))
+        clip = clip / (np.abs(clip).max() + 1e-9) * 0.5          # peak -6 dBFS
+        clip = clip * 10 ** (level_db / 20)
+        if level_db <= -20:
+            clip = lowpass(clip, 5500)                             # distance roll-off
         start = int(t_s * SAMPLE_RATE)
         end = min(n, start + len(clip))
         if end <= start:
             return
         night[start:end] += clip[: end - start]
         if cls:
-            truth.append({
-                "cls": cls,
-                "start_ms": int(t_s * 1000),
-                "end_ms": int((end / SAMPLE_RATE) * 1000),
-                "distance_m": float(distance),
-            })
+            truth.append(dict(cls=cls, start_ms=int(t_s * 1000),
+                              end_ms=int(end / SAMPLE_RATE * 1000), level_db=float(level_db)))
 
-    dur_s = minutes * 60
+    level = lambda: float(rng.choice(LEVELS_DB, p=LEVEL_P))
 
-    # Coughs: mostly near (the phone's owner), some far (a partner across the bed).
-    for _ in range(max(1, int(dur_s / 3600 * 10))):
-        place("coughing", "COUGH", rng.uniform(0, dur_s - 3),
-              rng.choice([0.5, 0.7, 1.0, 2.5, 3.0], p=[0.3, 0.25, 0.2, 0.15, 0.1]))
+    for _ in range(int(dur_s / 3600 * 30)):
+        src = rng.choice(cv_files) if rng.random() < 0.7 else esc("coughing")
+        place(src, "COUGH", rng.uniform(0, dur_s - 12), level())
 
-    for _ in range(max(1, int(dur_s / 3600 * 2))):
-        place("sneezing", "SNEEZE", rng.uniform(0, dur_s - 3),
-              rng.choice([0.5, 0.8, 2.5], p=[0.5, 0.3, 0.2]))
+    for _ in range(max(1, int(dur_s / 3600 * 6))):
+        place(esc("sneezing"), "SNEEZE", rng.uniform(0, dur_s - 4), level())
 
-    # Snoring arrives in episodes, not uniformly: a run of breaths every few seconds.
-    n_episodes = max(1, int(dur_s / 3600 * 3))
-    for _ in range(n_episodes):
+    for _ in range(max(1, int(dur_s / 3600 * 3))):
         ep_start = rng.uniform(0, max(1.0, dur_s - 400))
-        ep_len = rng.uniform(120, 360)
+        ep_level = float(rng.choice([0, -8, -15]))
         t = ep_start
-        while t < min(ep_start + ep_len, dur_s - 3):
-            place("snoring", "SNORE", t, rng.choice([0.6, 0.9]))
+        while t < min(ep_start + rng.uniform(120, 360), dur_s - 4):
+            place(esc("snoring"), "SNORE", t, ep_level)
             t += rng.uniform(3.0, 6.0)
 
-    # Distractors: the false-positive pressure the thresholds must survive.
-    for _ in range(max(1, int(dur_s / 3600 * 40))):
-        place(str(rng.choice(DISTRACTORS)), None, rng.uniform(0, dur_s - 3),
-              rng.uniform(0.8, 3.0))
+    for _ in range(int(dur_s / 3600 * 40)):
+        cat = str(rng.choice([d for d in DISTRACTORS if d != "sneezing_decoy"]))
+        place(esc(cat), None, rng.uniform(0, dur_s - 5), float(rng.uniform(-25, -3)))
 
     peak = np.abs(night).max()
     if peak > 0.98:
@@ -154,7 +153,7 @@ def build_night(meta, audio_dir, minutes, seed, floor_db):
     return night, sorted(truth, key=lambda x: x["start_ms"])
 
 
-def main() -> None:
+def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--nights", type=int, default=6)
     ap.add_argument("--minutes", type=int, default=30)
@@ -165,36 +164,29 @@ def main() -> None:
 
     meta = pd.read_csv(ROOT / "Datasets/ESC-50-master/meta/esc50.csv")
     audio_dir = ROOT / "Datasets/ESC-50-master/audio"
-    interp, in_idx, sc_idx, em_idx = load_interpreter()
+    cv_files = coughvid_files(split_held_out=False)
+    print(f"{len(cv_files)} COUGHVID tuning recordings (held-out split excluded)")
+    interp = load_interpreter()
 
-    all_scores, all_rms, all_truth, night_index = [], [], [], []
+    S, SN, R, T, L = [], [], [], [], []
     for i in range(args.nights):
-        print(f"night {i + 1}/{args.nights}: mixing {args.minutes} min ...")
-        night, truth = build_night(meta, audio_dir, args.minutes, args.seed + i, args.floor_db)
+        print(f"night {i + 1}/{args.nights} ...")
+        night, truth = build_night(meta, audio_dir, cv_files, args.minutes,
+                                   args.seed + i, args.floor_db)
         frames = frame_audio(night)
-        print(f"  {len(frames)} frames, {len(truth)} ground-truth events; scoring ...")
-        raw, _ = run_frames(interp, in_idx, sc_idx, em_idx, frames)
-        red = reduce_scores(raw)
-        rms = np.array([rms_db(f) for f in frames], dtype=np.float32)
-
-        all_scores.append(red)
-        all_rms.append(rms)
-        all_truth.append(json.dumps(truth))
-        night_index.append(len(frames))
-        del night, frames, raw
+        raw, _ = run_frames(*interp, frames)
+        raw_n, _ = run_frames(*interp, normalise(frames))
+        S.append(reduce_scores(raw)); SN.append(reduce_scores(raw_n))
+        R.append(np.array([rms_db(f) for f in frames], dtype=np.float32))
+        T.append(json.dumps(truth)); L.append(len(frames))
+        print(f"  {len(frames)} frames, {len(truth)} events "
+              f"({sum(t['cls']=='COUGH' for t in truth)} coughs)")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        args.out,
-        scores=np.concatenate(all_scores),
-        rms=np.concatenate(all_rms),
-        lengths=np.array(night_index),
-        truth=np.array(all_truth, dtype=object),
-        minutes=args.minutes,
-        allow_pickle=True,
-    )
-    total_h = args.nights * args.minutes / 60
-    print(f"\nwrote {args.out}  ({total_h:.1f} hours of scored night audio)")
+    np.savez_compressed(args.out, scores=np.concatenate(S), scores_norm=np.concatenate(SN),
+                        rms=np.concatenate(R), lengths=np.array(L),
+                        truth=np.array(T, dtype=object), minutes=args.minutes)
+    print(f"wrote {args.out} ({args.nights * args.minutes / 60:.1f} h)")
 
 
 if __name__ == "__main__":

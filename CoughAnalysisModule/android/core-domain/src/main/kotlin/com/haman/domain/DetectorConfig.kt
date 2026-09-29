@@ -43,6 +43,13 @@ data class DetectorConfig(
      *  TV and radio are the dominant daytime false-positive source. */
     val speechSuppressionThreshold: Float = 0.55f,
     /**
+     * Speech must be present in this many of the last [speechWindowFrames] frames before
+     * it suppresses an onset. A single frame used to be enough, but a voiced cough can
+     * score 0.95 on Speech for one frame; talking and TV are sustained, a cough is not.
+     */
+    val speechSustainFrames: Int = 4,
+    val speechWindowFrames: Int = 5,
+    /**
      * Cough and sneeze are acoustically entangled: measured on ESC-50, sneeze clips
      * reach 1.00 on YAMNet's Cough output (results/esc50_yamnet.json). Without
      * arbitration a single sneeze opens both a cough event and a sneeze event and is
@@ -50,12 +57,25 @@ data class DetectorConfig(
      * frame, so the louder interpretation wins instead of both.
      */
     val coughSneezeExclusionThreshold: Float = 0.20f,
+    /**
+     * Sneeze must beat cough by this margin to win arbitration. Coughs are far more common
+     * at night than sneezes, so a near-tie is more likely a cough; on-device a cough
+     * scoring 0.71 cough / 0.72 sneeze was logged as a sneeze without this.
+     */
+    val sneezeMargin: Float = 0.15f,
     /** Coughs starting within this of the previous cough share a bout id. */
     val coughBoutGapMs: Long = 3_000,
     /** Snore events separated by less than this belong to one episode. */
     val snoreEpisodeGapMs: Long = 60_000,
-    /** Median filter + EMA weight applied to raw scores before assembly. */
+    /** EMA weight applied to raw scores before assembly. */
     val emaAlpha: Float = 0.5f,
+    /**
+     * Attack-release smoothing: max(raw, ema). Keeps a peak intact on the frame it happens
+     * and smooths only the decay. Plain EMA halves a single-frame peak, which lost real
+     * coughs (a 0.60 cough smoothed to 0.30); at an equal false-alarm budget attack-release
+     * caught 67% vs 50% of played coughs on a real phone.
+     */
+    val attackRelease: Boolean = true,
 ) {
     fun paramsFor(c: AcousticClass): ClassParams =
         params[c.name] ?: defaultParams.getValue(c.name)

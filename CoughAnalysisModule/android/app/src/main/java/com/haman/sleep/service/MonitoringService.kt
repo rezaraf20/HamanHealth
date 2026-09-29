@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -23,6 +24,8 @@ import com.haman.data.AttributionStore
 import com.haman.domain.AcousticClass
 import com.haman.domain.DetectionPipeline
 import com.haman.domain.DetectorConfig
+import com.haman.domain.InputNormalizer
+import com.haman.domain.SpectralStats
 import com.haman.inference.YamnetClassifier
 import com.haman.sleep.MainActivity
 import com.haman.sleep.R
@@ -75,9 +78,9 @@ class MonitoringService : Service() {
         val prefs = Prefs(applicationContext)
         val sampleRate = YamnetClassifier.SAMPLE_RATE
 
-        val cap = AudioCapture(applicationContext, sampleRate)
+        val cap = AudioCapture(applicationContext)
         capture = cap
-        if (!cap.start()) {
+        if (!cap.start(AudioCapture.Route.parse(prefs.readAudioRoute()))) {
             MonitorState.update { it.copy(error = "Microphone unavailable") }
             stopSelf(); return@runBlocking
         }
@@ -101,7 +104,7 @@ class MonitoringService : Service() {
                 startedAt = startedAt,
                 deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
                 appVersion = appVersion(),
-                audioSource = cap.activeSource.name,
+                audioSource = cap.activeRoute.toString(),
                 configJson = config.toJson(),
             )
         )
@@ -111,31 +114,81 @@ class MonitoringService : Service() {
 
         MonitorState.update {
             it.copy(running = true, sessionId = sessionId, startedAt = startedAt,
-                audioSource = cap.activeSource.name, error = null)
+                audioSource = cap.activeRoute.toString(), error = null, bandLimited = null)
         }
+
+        // Debug builds only, and only when files/debug_raw exists (created via
+        // `adb shell run-as com.haman.sleep touch files/debug_raw`): dump the exact 16 kHz
+        // stream the pipeline received, so a device's behaviour can be replayed offline
+        // through ml/ - the only way to see what a specific phone's mic path delivers.
+        val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val rawDump = if (debuggable && File(filesDir, "debug_raw").exists()) {
+            File(filesDir, "debug/$sessionId.pcm").apply { parentFile?.mkdirs() }
+                .outputStream().buffered(1 shl 16)
+        } else null
+        val dumpBytes = java.nio.ByteBuffer.allocate(sampleRate).order(java.nio.ByteOrder.LITTLE_ENDIAN)
 
         val window = SlidingWindow(YamnetClassifier.FRAME_SAMPLES, HOP_SAMPLES)
         val ring = AudioRingBuffer(sampleRate * RING_SECONDS)
-        val floatChunk = FloatArray(sampleRate / 10)
+        val floatChunk = FloatArray(sampleRate / 10 + 8) // decimated chunks can run a sample or two long
+        val normFrame = FloatArray(YamnetClassifier.FRAME_SAMPLES)
         val counts = mutableMapOf<AcousticClass, Int>()
         var samplesRead = 0L
+        var frameIndex = 0L
         var lastFlush = System.currentTimeMillis()
+        // Continuous bandwidth check on the live stream. A band-limited path is the
+        // most likely reason a phone misses most coughs, and without this it is silent.
+        // Only loud windows are judged, so room tone on a processed path doesn't
+        // produce a false alarm.
+        val bwBuf = FloatArray(sampleRate * 2)
+        var bwFill = 0
+        var bwLoudWindows = 0
+        var bwLimitedWindows = 0
 
         cap.readLoop { pcm, n ->
+            if (rawDump != null) {
+                dumpBytes.clear()
+                for (i in 0 until n) dumpBytes.putShort(pcm[i])
+                rawDump.write(dumpBytes.array(), 0, n * 2)
+            }
             ring.write(pcm, n)
             samplesRead += n
             AudioCapture.toFloat(pcm, n, floatChunk)
 
+            val take = minOf(n, bwBuf.size - bwFill)
+            System.arraycopy(floatChunk, 0, bwBuf, bwFill, take)
+            bwFill += take
+            if (bwFill == bwBuf.size) {
+                bwFill = 0
+                val b = SpectralStats.bands(bwBuf, sampleRate)
+                if (b.lowDb > BANDWIDTH_JUDGE_MIN_DB) {
+                    bwLoudWindows++
+                    if (b.looksBandLimited) bwLimitedWindows++
+                    if (bwLoudWindows >= 5) {
+                        val limited = bwLimitedWindows * 2 > bwLoudWindows
+                        MonitorState.update { it.copy(bandLimited = limited) }
+                        if (limited) Log.w(TAG, "live audio looks band-limited on ${cap.activeRoute}")
+                    }
+                }
+            }
+
             window.append(floatChunk, n) { frame ->
-                // Timestamps are derived from the sample count, not the wall clock:
-                // the audio stream is the only monotonic reference that stays correct
-                // if the device clock shifts mid-night.
-                val framePos = samplesRead
-                val relMs = (framePos - YamnetClassifier.FRAME_SAMPLES) * 1000L / sampleRate
-                val ts = startedAt + relMs
+                // Frame k starts at exactly k * hop. Timestamps come from the frame index,
+                // never from the wall clock (which can shift mid-night) and never from the
+                // running sample count: that count is only updated per 100 ms chunk, so it
+                // stamped frames up to 100 ms late and jittered durations around the tuned
+                // minDuration (exactly three hops) - borderline coughs that pass offline
+                // were discarded on the phone. The tuning harness uses k * 480 ms too.
+                val ts = startedAt + frameIndex * HOP_MS
+                frameIndex++
+                // Level evidence comes from the raw frame; only the model sees the
+                // normalised copy. See InputNormalizer for why.
                 val rms = AudioCapture.rmsDb(frame)
 
-                val result = pipeline.onFrame(ts, rms) { clf.infer(frame) }
+                val result = pipeline.onFrame(ts, rms) {
+                    InputNormalizer.normalize(frame, normFrame)
+                    clf.infer(normFrame)
+                }
 
                 for (event in result.events) {
                     counts[event.cls] = (counts[event.cls] ?: 0) + 1
@@ -165,6 +218,7 @@ class MonitoringService : Service() {
         }
 
         // readLoop returns when capture stops or the microphone is taken away.
+        runCatching { rawDump?.close() }
         val endedAt = System.currentTimeMillis()
         val tail = pipeline.flush(endedAt)
         tail.events.forEach { writer.addEvent(it, pipeline.embeddingFor(it.peakFrameMs), null) }
@@ -293,6 +347,8 @@ class MonitoringService : Service() {
         const val HOP_SAMPLES = 7680        // 480 ms at 16 kHz
         const val RING_SECONDS = 10
         const val FLUSH_INTERVAL_MS = 5_000L
+        /** Low-band level a 2 s window must reach before its bandwidth is judged. */
+        const val BANDWIDTH_JUDGE_MIN_DB = -75f
 
         fun start(context: Context) {
             val i = Intent(context, MonitoringService::class.java)
