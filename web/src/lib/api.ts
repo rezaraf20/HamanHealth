@@ -243,7 +243,7 @@ export const api = {
     login: (email: string, password: string) =>
       USE_MOCKS
         ? mocks.login(email)
-        : request<{ requires2fa: boolean; challengeId?: string; tokens?: Tokens }>("/auth/login", {
+        : request<{ requires2fa: boolean; challengeId?: string; tokens?: Tokens; access?: string; refresh?: string }>("/auth/login", {
             method: "POST",
             body: json({ email, password }),
           }),

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AuthLayout, Field, inputClass, primaryBtn } from "@/components/auth-layout";
-import { api } from "@/lib/api";
+import { api, setTokens } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
@@ -36,6 +36,8 @@ function LoginPage() {
         navigate({ to: "/auth/two-factor", search: { challenge: res.challengeId ?? "" } });
         return;
       }
+      if (res.tokens) setTokens(res.tokens);
+      else if (res.access) setTokens({ access: res.access, refresh: res.refresh ?? res.access });
       await refresh();
       const consent = await api.consent.get();
       navigate({ to: consent.acceptedAt ? "/" : "/auth/consent" });

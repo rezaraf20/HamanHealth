@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AuthLayout, Field, inputClass, primaryBtn } from "@/components/auth-layout";
-import { api } from "@/lib/api";
+import { api, setTokens } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 
@@ -36,7 +36,8 @@ function RegisterPage() {
     }
     setBusy(true);
     try {
-      await api.auth.register(name, email, password);
+      const tokens = await api.auth.register(name, email, password);
+      if (tokens) setTokens(tokens);
       await refresh();
       navigate({ to: "/auth/consent" });
     } catch (err) {
