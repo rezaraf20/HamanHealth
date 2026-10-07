@@ -353,7 +353,7 @@ def dashboard_summary(current_user: CurrentUser, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/{session_id}", response_model=SessionOut)
+@router.get("/{session_id:int}", response_model=SessionOut)
 def get_session(session_id: int, current_user: CurrentUser, db: Session = Depends(get_db)):
     session = db.get(CoughSession, session_id)
     if not session or session.user_id != current_user.id:

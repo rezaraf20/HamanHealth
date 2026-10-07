@@ -22,8 +22,8 @@ def web_dashboard(
     Returns per-day cough counts; weight/steps/meds are stubbed at 0
     until those data sources are added.
     """
-    range = max(1, min(range, 90))
-    since = datetime.now(timezone.utc) - timedelta(days=range)
+    days = max(1, min(range, 90))
+    since = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Build date → cough_count map from real events
     rows = (
@@ -63,7 +63,7 @@ def web_dashboard(
 
     # Build full date range (fill gaps with zeros)
     points: list[DailyPoint] = []
-    for i in range(range):
+    for i in range(days):
         day = (since + timedelta(days=i + 1)).date()
         day_str = str(day)
         points.append(DailyPoint(
@@ -92,7 +92,7 @@ def web_dashboard(
 
     # Build change cards from real data
     changes: list[ChangeCard] = []
-    half = range // 2
+    half = days // 2
     if half > 0 and len(points) >= half * 2:
         first_half = points[:half]
         second_half = points[half:]
@@ -123,7 +123,7 @@ def web_dashboard(
             ))
 
     return WebDashboardData(
-        range=range,
+        range=days,
         points=points,
         changes=changes,
         medications=[],
