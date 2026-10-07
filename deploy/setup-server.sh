@@ -12,9 +12,7 @@ echo "=== Haman Health — server bootstrap ==="
 # ── 1. Clone / update repo ────────────────────────────────────────────────────
 if [ -d "$REPO_DIR/.git" ]; then
   echo "Repo exists — pulling platform branch..."
-  git -C "$REPO_DIR" fetch origin
-  git -C "$REPO_DIR" checkout platform
-  git -C "$REPO_DIR" pull origin platform
+  (cd "$REPO_DIR" && git fetch origin && git checkout platform && git pull origin platform)
 else
   echo "Cloning repo..."
   git clone --branch platform https://github.com/rezaraf20/hamanhealth "$REPO_DIR"

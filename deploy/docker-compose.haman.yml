@@ -20,7 +20,7 @@ services:
       - haman-net
 
   haman-db:
-    image: postgres:16-alpine
+    image: postgres:16
     container_name: haman-db
     restart: unless-stopped
     volumes:
