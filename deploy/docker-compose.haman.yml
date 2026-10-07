@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  haman-api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: haman-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://haman:${HAMAN_DB_PASS}@haman-db:5432/hamanhealth
+      - SECRET_KEY=${HAMAN_SECRET_KEY}
+      - CORS_ORIGINS=["https://hamanhealth.com","https://app.hamanhealth.com","capacitor://localhost"]
+    depends_on:
+      haman-db:
+        condition: service_healthy
+    networks:
+      - haman-net
+
+  haman-db:
+    image: postgres:16-alpine
+    container_name: haman-db
+    restart: unless-stopped
+    volumes:
+      - haman-pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=hamanhealth
+      - POSTGRES_USER=haman
+      - POSTGRES_PASSWORD=${HAMAN_DB_PASS}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haman -d hamanhealth"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - haman-net
+
+volumes:
+  haman-pgdata:
+
+networks:
+  haman-net:
+    driver: bridge
