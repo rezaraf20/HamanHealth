@@ -12,7 +12,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://haman:${HAMAN_DB_PASS}@haman-db:5432/hamanhealth
       - SECRET_KEY=${HAMAN_SECRET_KEY}
-      - CORS_ORIGINS=["https://hamanhealth.com","https://app.hamanhealth.com","capacitor://localhost"]
+      - ADMIN_SECRET=${ADMIN_SECRET}
+      - CORS_ORIGINS=["https://hamanhealth.com","https://app.hamanhealth.com","https://admin.hamanhealth.com","capacitor://localhost"]
     depends_on:
       haman-db:
         condition: service_healthy
