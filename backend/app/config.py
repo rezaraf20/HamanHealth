@@ -15,11 +15,15 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         "https://hamanhealth.com",
         "https://app.hamanhealth.com",
+        "https://admin.hamanhealth.com",
         "http://localhost:3000",
         "http://localhost:5173",
         "capacitor://localhost",
         "http://localhost",
     ]
+
+    # Admin
+    admin_secret: str = "CHANGE_ADMIN_SECRET"
 
     # Clip storage (pseudonymised audio, 90-day TTL)
     clips_dir: str = "/var/haman/clips"
