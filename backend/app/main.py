@@ -8,6 +8,7 @@ from .routers import auth, sessions
 from .routers import dashboard
 from .routers import admin
 from .routers import consent
+from .routers import timeline
 
 settings = get_settings()
 
@@ -41,6 +42,7 @@ app.include_router(sessions.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(consent.router)
+app.include_router(timeline.router)
 
 
 @app.get("/api/health")
