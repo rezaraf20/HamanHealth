@@ -33,17 +33,19 @@ fi
 echo "Starting Docker containers..."
 docker compose -f "$REPO_DIR/deploy/docker-compose.haman.yml" --env-file "$ENV_FILE" up -d --build
 
-# ── 4. Copy Apache vhost ──────────────────────────────────────────────────────
-APACHE_CONF_DIR="/etc/httpd/conf.d"
-if [ -d "$APACHE_CONF_DIR" ]; then
-  cp "$REPO_DIR/deploy/apache-api.hamanhealth.com.conf" "$APACHE_CONF_DIR/"
-  echo "Apache vhost installed. After DNS propagates, run:"
-  echo "  certbot --apache -d api.hamanhealth.com"
-  echo "Then: systemctl reload httpd"
+# ── 4. Set up reverse proxy vhost ────────────────────────────────────────────
+# This server uses DirectAdmin's cust_httpd pattern, NOT /etc/httpd/conf.d/.
+# Wildcard cert *.hamanhealth.com is already installed (valid Dec 2026).
+# Run the proxy setup script if this is the first deploy:
+if ! grep -qF "haman-api proxy" /home/hamanhea/domains/hamanhealth.com/cust_httpd 2>/dev/null; then
+  bash "$REPO_DIR/deploy/directadmin-proxy-setup.sh"
 else
-  echo "Apache conf.d not found at $APACHE_CONF_DIR — copy manually."
+  echo "Proxy vhost already configured — skipping."
 fi
 
 echo ""
 echo "=== Done! API will be live at https://api.hamanhealth.com ==="
 echo "Health check: curl http://127.0.0.1:8002/api/health"
+echo ""
+echo "Next: deploy the web app:"
+echo "  bash $REPO_DIR/deploy/deploy-web.sh"

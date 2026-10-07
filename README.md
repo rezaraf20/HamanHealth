@@ -42,14 +42,23 @@ API docs: http://localhost:8002/api/docs
 
 ### Deploy to server
 
+Server: **128.140.54.86** (Hetzner), SSH on port **2025**, DirectAdmin user **hamanhea**  
+Wildcard cert `*.hamanhealth.com` is already installed (valid Dec 2026).
+
 ```bash
-# On the Hetzner server (one-time setup):
+# On the Hetzner server as root — one-time API bootstrap:
 bash deploy/setup-server.sh
 
-# After DNS for api.hamanhealth.com is active:
-certbot --apache -d api.hamanhealth.com
-systemctl reload httpd
+# Deploy / update the web SPA to hamanhealth.com:
+bash deploy/deploy-web.sh
+
+# Test endpoints:
+curl https://api.hamanhealth.com/api/health   # API
+curl https://hamanhealth.com                  # Web SPA
 ```
+
+> **Note:** This server uses DirectAdmin's `cust_httpd` file (not `/etc/httpd/conf.d/`).
+> `deploy/directadmin-proxy-setup.sh` documents and applies the proxy config for `api.hamanhealth.com`.
 
 ## Web App
 
