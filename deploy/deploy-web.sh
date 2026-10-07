@@ -1,124 +1,122 @@
 #!/usr/bin/env bash
-# Builds the Haman Health web SPA and deploys it to hamanhealth.com.
+# Deploys the pre-built Haman Health web SPA to app.hamanhealth.com.
 #
-# This runs on the Hetzner server (128.140.54.86, root).
-# The SPA is served as static files from the DirectAdmin public_html directory.
+# WHY PRE-BUILT: The server runs Node 16; vite requires Node 18+.
+# Build on your dev machine, then upload the static output here.
 #
-# Usage: bash deploy/deploy-web.sh
-# Run after: bash deploy/setup-server.sh  (sets up the API)
+# ── Build on your machine ────────────────────────────────────────────────────
+#   cd web
+#   bun install
+#   VITE_API_BASE_URL=https://api.hamanhealth.com/api VITE_USE_MOCKS=false bun run build
+#   # Output lands in: web/.output/public/
+#
+# ── Upload to server ─────────────────────────────────────────────────────────
+#   scp -P 2025 -r web/.output/public/ root@128.140.54.86:/tmp/haman-web-build/
+#   # Then on the server:
+#   bash /opt/hamanhealth/deploy/deploy-web.sh /tmp/haman-web-build
+#
+# Usage: bash deploy/deploy-web.sh [BUILD_DIR]
+#   BUILD_DIR: path to the pre-built static files (default: /tmp/haman-web-build)
 
 set -euo pipefail
 
-REPO_DIR="/opt/hamanhealth"
-WEB_DIR="$REPO_DIR/web"
-BUILD_OUT="$WEB_DIR/.output/public"      # TanStack Start SPA output
+BUILD_DIR="${1:-/tmp/haman-web-build}"
 DA_USER="hamanhea"
-PUBLIC_HTML="/home/${DA_USER}/domains/hamanhealth.com/public_html"
-CUST_HTTPD="/home/${DA_USER}/domains/hamanhealth.com/cust_httpd"
-DOMAIN="hamanhealth.com"
-MARKER="# haman-web static — DO NOT REMOVE"
+DA_DOMAIN="hamanhealth.com"
+APP_SUBDOMAIN="app.hamanhealth.com"
+# DirectAdmin stores the subdomain's public_html here:
+PUBLIC_HTML="/home/${DA_USER}/domains/${APP_SUBDOMAIN}/public_html"
+# DirectAdmin's real custom config file (NOT cust_httpd inside domains/):
+DA_CONF="/usr/local/directadmin/data/users/${DA_USER}/domains/${DA_DOMAIN}.cust_httpd"
+MARKER="# haman-app.hamanhealth.com — DO NOT REMOVE"
 
-echo "=== Haman Health — web deploy ==="
+echo "=== Haman Health — web deploy to ${APP_SUBDOMAIN} ==="
 
-# ── 1. Ensure bun is available ────────────────────────────────────────────────
-if ! command -v bun &>/dev/null; then
-  echo "Installing bun..."
-  curl -fsSL https://bun.sh/install | bash
-  export PATH="$HOME/.bun/bin:$PATH"
-fi
-echo "bun: $(bun --version)"
-
-# ── 2. Install deps ───────────────────────────────────────────────────────────
-echo "Installing web dependencies..."
-(cd "$WEB_DIR" && bun install --frozen-lockfile)
-
-# ── 3. Build production SPA ───────────────────────────────────────────────────
-echo "Building production SPA..."
-(cd "$WEB_DIR" && VITE_API_BASE_URL=https://api.hamanhealth.com/api \
-                  VITE_USE_MOCKS=false \
-                  bun run build)
-
-if [ ! -d "$BUILD_OUT" ]; then
-  echo "Build output not found at $BUILD_OUT — build may have failed."
+# ── Validate build dir ────────────────────────────────────────────────────────
+if [ ! -f "$BUILD_DIR/index.html" ]; then
+  echo "ERROR: $BUILD_DIR/index.html not found."
+  echo ""
+  echo "Build the app on your dev machine first:"
+  echo "  cd web"
+  echo "  bun install"
+  echo "  VITE_API_BASE_URL=https://api.hamanhealth.com/api VITE_USE_MOCKS=false bun run build"
+  echo ""
+  echo "Then upload:"
+  echo "  scp -P 2025 -r web/.output/public/ root@128.140.54.86:/tmp/haman-web-build/"
+  echo "  ssh -p 2025 root@128.140.54.86 'bash /opt/hamanhealth/deploy/deploy-web.sh /tmp/haman-web-build'"
   exit 1
 fi
 
-echo "Build complete. Files in $BUILD_OUT:"
-ls "$BUILD_OUT" | head -20
+# ── Ensure subdomain public_html exists ───────────────────────────────────────
+# The subdomain must already exist in DirectAdmin (Subdomain Management).
+if [ ! -d "$PUBLIC_HTML" ]; then
+  echo "ERROR: $PUBLIC_HTML does not exist."
+  echo "Create the subdomain app.hamanhealth.com in DirectAdmin first:"
+  echo "  DirectAdmin → Subdomain Management → Add: app"
+  exit 1
+fi
 
-# ── 4. Sync to public_html ────────────────────────────────────────────────────
-echo "Syncing to $PUBLIC_HTML..."
-# rsync: delete files not in source, preserve permissions, skip git internals
+# ── Sync static files ─────────────────────────────────────────────────────────
+echo "Syncing static files to $PUBLIC_HTML..."
 rsync -av --delete \
   --exclude='.git' \
   --exclude='.env*' \
-  "$BUILD_OUT/" "$PUBLIC_HTML/"
+  "$BUILD_DIR/" "$PUBLIC_HTML/"
 chown -R "${DA_USER}:${DA_USER}" "$PUBLIC_HTML"
 
-echo "Web files deployed to $PUBLIC_HTML"
-
-# ── 5. Ensure SPA routing (mod_rewrite) in cust_httpd ────────────────────────
-if grep -qF "$MARKER" "$CUST_HTTPD" 2>/dev/null; then
-  echo "SPA routing rules already in $CUST_HTTPD — skipping."
-else
-  echo "Adding SPA routing rules to $CUST_HTTPD..."
-  cat >> "$CUST_HTTPD" <<BLOCK
-
-${MARKER}
-# Serve hamanhealth.com as a static SPA (TanStack Start, Capacitor web layer)
-# All non-file requests fall back to index.html for client-side routing.
-<VirtualHost *:80>
-    ServerName ${DOMAIN}
-    ServerAlias www.${DOMAIN}
-    DocumentRoot ${PUBLIC_HTML}
-    # HTTP → HTTPS redirect
+# Write .htaccess for SPA client-side routing fallback
+cat > "$PUBLIC_HTML/.htaccess" <<'HTACCESS'
+# SPA routing: serve index.html for all non-file requests
+<IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [R=301,L]
-</VirtualHost>
+    RewriteBase /
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.html [L]
+</IfModule>
 
-<VirtualHost *:443>
-    ServerName ${DOMAIN}
-    ServerAlias www.${DOMAIN}
-    DocumentRoot ${PUBLIC_HTML}
-
-    SSLEngine on
-    SSLCertificateFile    /usr/local/directadmin/data/users/${DA_USER}/domains/${DOMAIN}.cert
-    SSLCertificateKeyFile /usr/local/directadmin/data/users/${DA_USER}/domains/${DOMAIN}.key
-    SSLCACertificateFile  /usr/local/directadmin/data/users/${DA_USER}/domains/${DOMAIN}.cacert
-
-    # SPA fallback: route all non-file, non-directory requests to index.html
-    <Directory ${PUBLIC_HTML}>
-        Options -Indexes +FollowSymLinks
-        AllowOverride None
-        Require all granted
-
-        RewriteEngine On
-        RewriteCond %{REQUEST_FILENAME} !-f
-        RewriteCond %{REQUEST_FILENAME} !-d
-        RewriteRule ^ /index.html [L]
-    </Directory>
-
-    # Cache control for immutable hashed assets
+# Cache immutable hashed assets forever
+<IfModule mod_headers.c>
     <FilesMatch "\.(js|css|woff2?|png|svg|ico|webp)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
     <FilesMatch "index\.html$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
     </FilesMatch>
-
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set X-Content-Type-Options "nosniff"
-    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+HTACCESS
 
-    ErrorLog  /var/log/httpd/${DOMAIN}-error.log
-    CustomLog /var/log/httpd/${DOMAIN}-access.log combined
-</VirtualHost>
-BLOCK
+echo "Static files deployed and .htaccess written."
 
-  echo "SPA routing rules added."
+# ── Add vhost block to DirectAdmin custom config ──────────────────────────────
+# DirectAdmin injects .cust_httpd content inside the existing vhost — so we
+# write ONLY directives (no <VirtualHost> wrappers here). However for a
+# subdomain we need its own vhost; DirectAdmin handles this via a separate
+# subdomain .cust_httpd file.
+SUB_CONF="/usr/local/directadmin/data/users/${DA_USER}/domains/${APP_SUBDOMAIN}.cust_httpd"
+
+if grep -qF "$MARKER" "$SUB_CONF" 2>/dev/null; then
+  echo "Vhost config already present in $SUB_CONF — skipping."
+else
+  echo "Writing vhost config to $SUB_CONF..."
+  # For subdomains DirectAdmin accepts directives injected into its managed vhost.
+  # The wildcard cert *.hamanhealth.com covers app.hamanhealth.com.
+  cat > "$SUB_CONF" <<CONF
+${MARKER}
+# Allow .htaccess overrides for SPA routing
+<Directory ${PUBLIC_HTML}>
+    AllowOverride All
+    Options -Indexes +FollowSymLinks
+    Require all granted
+</Directory>
+CONF
+  chown "${DA_USER}:${DA_USER}" "$SUB_CONF"
+  echo "Vhost config written."
 fi
 
-# ── 6. Reload Apache ──────────────────────────────────────────────────────────
+# ── Reload Apache ─────────────────────────────────────────────────────────────
 if systemctl is-active --quiet httpd 2>/dev/null; then
   systemctl reload httpd
   echo "Apache reloaded."
@@ -128,6 +126,7 @@ elif systemctl is-active --quiet lsws 2>/dev/null; then
 fi
 
 echo ""
-echo "=== Done! Web app deployed ==="
-echo "Visit: https://${DOMAIN}"
-echo "API:   https://api.${DOMAIN}/api/health"
+echo "=== Done! ==="
+echo "App: https://${APP_SUBDOMAIN}"
+echo "API: https://api.${DA_DOMAIN}/api/health"
+echo "WordPress on ${DA_DOMAIN} is untouched."
