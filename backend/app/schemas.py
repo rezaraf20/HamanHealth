@@ -83,7 +83,7 @@ class SessionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── Dashboard ─────────────────────────────────────────────────────────────────
+# ── Dashboard (legacy internal) ───────────────────────────────────────────────
 
 class DailyCount(BaseModel):
     date: str       # "2026-10-07"
@@ -95,3 +95,60 @@ class DashboardSummary(BaseModel):
     total_events: int
     last_7_days: list[DailyCount]
     last_session: SessionOut | None
+
+
+# ── Web app API shapes ────────────────────────────────────────────────────────
+# These match the TypeScript types in the companion app (src/lib/api.ts).
+
+class HourlyPoint(BaseModel):
+    hour: str       # "02:00"
+    coughs: int
+
+
+class NightSummary(BaseModel):
+    """Response for GET /api/sessions/last/summary"""
+    date: str                       # "2026-10-07"
+    coughs: int
+    coughsPrevAvg: float
+    sleepHours: float
+    restfulness: int                # 0–100
+    hourly: list[HourlyPoint]
+    note: str
+
+
+class DailyPoint(BaseModel):
+    """One data point in the dashboard chart."""
+    date: str
+    coughs: int
+    sleepHours: float
+    weight: float
+    steps: int
+    medsTaken: int
+    medsPlanned: int
+
+
+class ChangeCard(BaseModel):
+    id: str
+    metric: str
+    title: str
+    description: str
+    direction: str          # "up" | "down" | "steady"
+    deltaLabel: str
+    since: str
+
+
+class DashboardAverages(BaseModel):
+    coughs: float
+    weight: float
+    steps: float
+    sleepHours: float
+    adherence: float
+
+
+class WebDashboardData(BaseModel):
+    """Response for GET /api/dashboard?range=N"""
+    range: int
+    points: list[DailyPoint]
+    changes: list[ChangeCard]
+    medications: list        # empty list — medications not yet tracked
+    averages: DashboardAverages
