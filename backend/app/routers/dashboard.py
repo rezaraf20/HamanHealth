@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, cast, Date
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 
 @router.get("/dashboard", response_model=WebDashboardData)
 def web_dashboard(
-    range: int = 7,
+    days_range: int = Query(7, alias="range"),
     current_user: CurrentUser = ...,
     db: Session = Depends(get_db),
 ):
@@ -22,7 +22,7 @@ def web_dashboard(
     Returns per-day cough counts; weight/steps/meds are stubbed at 0
     until those data sources are added.
     """
-    days = max(1, min(range, 90))
+    days = max(1, min(days_range, 90))
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Build date → cough_count map from real events
