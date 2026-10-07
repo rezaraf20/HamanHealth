@@ -7,6 +7,7 @@ from .database import Base, engine
 from .routers import auth, sessions
 from .routers import dashboard
 from .routers import admin
+from .routers import consent
 
 settings = get_settings()
 
@@ -39,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(sessions.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
+app.include_router(consent.router)
 
 
 @app.get("/api/health")
