@@ -32,6 +32,7 @@ class CoughSession(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sensitivity: Mapped[str | None] = mapped_column(String(16))  # low | medium | high
     event_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     note: Mapped[str | None] = mapped_column(Text)
 

@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, cast, Date, text
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from ..auth import CurrentUser
 from ..database import get_db
@@ -15,6 +17,126 @@ from ..schemas import (
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
+
+# ---- Web app session models ----
+
+class QuietHours(BaseModel):
+    from_: str = "23:00"
+    to: str = "07:00"
+
+    class Config:
+        populate_by_name = True
+        fields = {"from_": "from"}
+
+
+class StartSessionRequest(BaseModel):
+    sensitivity: str = "medium"
+    quietHours: QuietHours = QuietHours()
+
+
+class NightSessionOut(BaseModel):
+    id: str
+    startedAt: str
+    endedAt: Optional[str]
+    status: str
+    sensitivity: str
+    quietHours: dict
+    coughCount: int
+
+    @classmethod
+    def from_orm(cls, s: CoughSession):
+        return cls(
+            id=str(s.id),
+            startedAt=s.started_at.isoformat(),
+            endedAt=s.ended_at.isoformat() if s.ended_at else None,
+            status="active" if s.is_active else "completed",
+            sensitivity=s.sensitivity or "medium",
+            quietHours={"from": "23:00", "to": "07:00"},
+            coughCount=s.event_count,
+        )
+
+
+class CoughEventIn(BaseModel):
+    session_id: str
+    timestamp: str
+    count: int
+
+
+class PushEventsRequest(BaseModel):
+    events: List[CoughEventIn]
+
+
+# ---- Web app endpoints ----
+
+@router.get("/current", response_model=Optional[NightSessionOut])
+def get_current_session(current_user: CurrentUser = ..., db: Session = Depends(get_db)):
+    """Returns the active session for this user, or null."""
+    s = (
+        db.query(CoughSession)
+        .filter(CoughSession.user_id == current_user.id, CoughSession.is_active == True)
+        .order_by(CoughSession.started_at.desc())
+        .first()
+    )
+    if not s:
+        return None
+    return NightSessionOut.from_orm(s)
+
+
+@router.post("", response_model=NightSessionOut, status_code=status.HTTP_201_CREATED)
+def start_session(body: StartSessionRequest, current_user: CurrentUser = ..., db: Session = Depends(get_db)):
+    """Start a new night session. Ends any previously active session first."""
+    # End any lingering active session
+    db.query(CoughSession).filter(
+        CoughSession.user_id == current_user.id,
+        CoughSession.is_active == True,
+    ).update({"is_active": False, "ended_at": datetime.now(timezone.utc)})
+
+    s = CoughSession(
+        user_id=current_user.id,
+        device_session_id=f"web-{int(datetime.now().timestamp()*1000)}",
+        started_at=datetime.now(timezone.utc),
+        sensitivity=body.sensitivity,
+        is_active=True,
+        event_count=0,
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return NightSessionOut.from_orm(s)
+
+
+@router.post("/events")
+def push_events(body: PushEventsRequest, current_user: CurrentUser = ..., db: Session = Depends(get_db)):
+    """Accept cough events from the web app."""
+    for ev in body.events:
+        try:
+            session_id = int(ev.session_id)
+        except (ValueError, TypeError):
+            continue
+        s = db.get(CoughSession, session_id)
+        if not s or s.user_id != current_user.id:
+            continue
+        ts = datetime.fromisoformat(ev.timestamp.replace("Z", "+00:00"))
+        for _ in range(max(1, ev.count)):
+            db.add(CoughEvent(session_id=s.id, timestamp=ts, confidence=1.0))
+        s.event_count = (s.event_count or 0) + ev.count
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{session_id}/end", response_model=NightSessionOut)
+def end_session(session_id: int, current_user: CurrentUser = ..., db: Session = Depends(get_db)):
+    s = db.get(CoughSession, session_id)
+    if not s or s.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s.is_active = False
+    s.ended_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(s)
+    return NightSessionOut.from_orm(s)
+
+
+# ---- Sync endpoint (mobile app) ----
 
 @router.post("/sync", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
 def sync_session(body: SessionUploadRequest, current_user: CurrentUser, db: Session = Depends(get_db)):
