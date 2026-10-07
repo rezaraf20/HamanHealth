@@ -55,10 +55,11 @@ def get_consent(user_id: int | None = Depends(_optional_user_id)):
 
 
 @router.put("", response_model=ConsentState)
-def update_consent(body: ConsentState, current_user: CurrentUser):
-    existing = _consent_store.get(current_user.id, {})
+def update_consent(body: ConsentState, user_id: int | None = Depends(_optional_user_id)):
+    uid = user_id or 0  # store under 0 for unauthenticated (onboarding flow)
+    existing = _consent_store.get(uid, {})
     updated = {**existing, **body.model_dump(exclude_none=True)}
     if not updated.get("acceptedAt"):
         updated["acceptedAt"] = datetime.now(timezone.utc).isoformat()
-    _consent_store[current_user.id] = updated
+    _consent_store[uid] = updated
     return ConsentState(**updated)
