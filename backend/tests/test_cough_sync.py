@@ -170,3 +170,13 @@ def test_web_session_end_appears_in_daily_report(client, user):
                 json={"events": [{"session_id": s["id"], "timestamp": "2026-10-10T01:00:00Z", "count": 2}]})
     client.post(f"/api/sessions/{s['id']}/end", headers=user)
     assert daily(client, user)["cough.count"]["value"] == 2
+
+
+def test_merged_platform_fixes_still_work(client, user):
+    # 5045b49: new users get an empty summary, not a 404
+    empty = client.get("/api/sessions/last/summary", headers=user)
+    assert empty.status_code == 200 and empty.json()["coughs"] == 0
+    # 23b565d: refresh endpoint
+    token = user["Authorization"].split()[1]
+    r = client.post("/api/auth/refresh", json={"refresh": token})
+    assert r.status_code == 200 and r.json()["access"]

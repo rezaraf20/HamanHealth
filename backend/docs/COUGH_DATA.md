@@ -191,7 +191,6 @@ After a model change: `alembic revision --autogenerate -m "…"`, review it, com
 - **Android upload transport**: the Capacitor plugin (`CoughSessionPlugin`) isn't in the
   repo yet. The phone side produces the sync JSON (`PlatformPayload.buildJson`) and
   stores the clip path per event. The plugin has to send both with the user's token.
-- Found in `platform` (unchanged here): health-record files live inside the container,
-  with no volume, so a rebuild deletes them. `POST /api/auth/refresh` doesn't exist. The
-  Notion page lists `/api/sessions/upload` and `/start`, and database `hamandb`; the code
-  has `/sync`, `POST /api/sessions` and `hamanhealth`.
+- The Notion backend page lists `/api/sessions/upload` and `/start`; the code has
+  `/sync` and `POST /api/sessions`. (The records volume and `/api/auth/refresh` were
+  fixed on `platform` in 23b565d and are merged into this branch.)

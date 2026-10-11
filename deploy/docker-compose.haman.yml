@@ -21,6 +21,7 @@ services:
       # (back that file up; without it clips cannot be decrypted).
       - CLIPS_ENCRYPTION_KEY=${HAMAN_CLIPS_KEY:-}
     volumes:
+      - haman-records:/data/records
       # Encrypted clip files. Kept out of the image so a rebuild doesn't delete them.
       - haman-clips:/var/haman/clips
       # The clip key, on a separate volume from the clips.
@@ -51,6 +52,7 @@ services:
 
 volumes:
   haman-pgdata:
+  haman-records:
   haman-clips:
   haman-keys:
 
