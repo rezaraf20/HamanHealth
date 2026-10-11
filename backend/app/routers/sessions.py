@@ -257,7 +257,17 @@ def last_summary(current_user: CurrentUser, db: Session = Depends(get_db)):
         .first()
     )
     if not last:
-        raise HTTPException(status_code=404, detail="No sessions found")
+        # Return a sensible empty summary instead of 404 so the frontend
+        # dashboard renders correctly for new users with no sessions yet.
+        return NightSummary(
+            date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            coughs=0,
+            coughsPrevAvg=0.0,
+            sleepHours=0.0,
+            restfulness=100,
+            hourly=[],
+            note="No sessions recorded yet. Start your first session tonight!",
+        )
 
     # Build hourly breakdown from real events
     events = (
