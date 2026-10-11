@@ -44,6 +44,16 @@ def upgrade() -> None:
         op.create_index("ix_users_id", "users", ["id"])
         op.create_index("ix_users_email", "users", ["email"], unique=True)
 
+    else:
+        # is_admin was added by hand on the production server (nullable, default false).
+        # Align it with the model: never NULL.
+        users_cols = {c["name"]: c for c in sa.inspect(op.get_bind()).get_columns("users")}
+        if "is_admin" not in users_cols:
+            op.add_column("users", sa.Column("is_admin", sa.Boolean(), nullable=False, server_default=sa.false()))
+        elif users_cols["is_admin"]["nullable"]:
+            op.execute("UPDATE users SET is_admin = false WHERE is_admin IS NULL")
+            op.alter_column("users", "is_admin", nullable=False)
+
     if "cough_sessions" not in tables:
         op.create_table(
             "cough_sessions",
