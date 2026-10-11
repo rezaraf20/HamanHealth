@@ -1,10 +1,14 @@
-from datetime import datetime
+from datetime import date, datetime
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, Float, ForeignKey,
-    Integer, String, Text, func
+    JSON, BigInteger, Boolean, Computed, Date, DateTime, Float, ForeignKey,
+    Index, Integer, String, Text, UniqueConstraint, func
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
+
+# JSONB on PostgreSQL, plain JSON elsewhere (keeps the models importable in tooling).
+JsonType = JSON().with_variant(JSONB(), "postgresql")
 
 
 class User(Base):
@@ -23,6 +27,10 @@ class User(Base):
 
 class CoughSession(Base):
     __tablename__ = "cough_sessions"
+    __table_args__ = (
+        # One server row per device session — makes /api/sessions/sync safely repeatable.
+        UniqueConstraint("user_id", "device_session_id", name="uq_cough_sessions_user_device_session"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
@@ -31,23 +39,200 @@ class CoughSession(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sensitivity: Mapped[str | None] = mapped_column(String(16))  # low | medium | high
+    # Coughs only (sneezes and snoring are counted separately), excluding events the
+    # user marked as "not a cough" or "someone else".
     event_count: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     note: Mapped[str | None] = mapped_column(Text)
 
+    # ── Recording context from the on-device module ──────────────────────────
+    # running | complete | interrupted. An interrupted night (app killed, phone died)
+    # must stay distinguishable from a quiet one.
+    status: Mapped[str | None] = mapped_column(String(16))
+    # IANA zone, e.g. "Europe/Amsterdam". Needed to put a night on the right calendar
+    # day; UTC dates split a night in two.
+    timezone: Mapped[str | None] = mapped_column(String(64))
+    device_model: Mapped[str | None] = mapped_column(String(128))
+    app_version: Mapped[str | None] = mapped_column(String(32))
+    # Microphone route. Levels (peak_db) are only comparable within one route/device.
+    audio_source: Mapped[str | None] = mapped_column(String(64))
+    noise_floor_db: Mapped[float | None] = mapped_column(Float)
+    # Time the microphone was unavailable (phone call etc.), so rates use real coverage.
+    mic_gap_ms: Mapped[int | None] = mapped_column(BigInteger)
+    frames_seen: Mapped[int | None] = mapped_column(BigInteger)
+    frames_inferred: Mapped[int | None] = mapped_column(BigInteger)
+    # Detector thresholds used for this night, so results stay reproducible after re-tuning.
+    detector_config: Mapped[dict | None] = mapped_column(JsonType)
+
     user: Mapped["User"] = relationship(back_populates="sessions")
     events: Mapped[list["CoughEvent"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    snore_episodes: Mapped[list["SnoreEpisode"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class CoughEvent(Base):
+    """One acoustic event. Despite the table name this also holds sneezes (and, if a
+    client sends them, individual snores) — always filter on event_type."""
     __tablename__ = "cough_events"
+    __table_args__ = (
+        UniqueConstraint("session_id", "device_event_id", name="uq_cough_events_session_device_event"),
+        Index("ix_cough_events_session_timestamp", "session_id", "timestamp"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
     session_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cough_sessions.id"), nullable=False, index=True)
+    # Event start. Kept under its original name so existing queries keep working.
+    # Start/end come from the detector, so they are on its 0.48 s frame grid; the
+    # millisecond-accurate boundaries measured from the audio are in cough_event_features.
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Peak model score, 0–1.
     confidence: Mapped[float | None] = mapped_column(Float)
     # Pseudonymised audio clip reference — stored in separate clips DB, no PII link
-    clip_anon_id: Mapped[str | None] = mapped_column(String(64))
+    clip_anon_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+
+    # ── Full event detail from the on-device module ──────────────────────────
+    # The device's own id for this event; the idempotency key for re-syncs.
+    device_event_id: Mapped[str | None] = mapped_column(String(64))
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False, default="cough", server_default="cough")
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Calculated by the database from timestamp/ended_at; never written by the app.
+    duration_ms: Mapped[int | None] = mapped_column(
+        Integer, Computed("(EXTRACT(EPOCH FROM (ended_at - \"timestamp\")) * 1000)::integer", persisted=True))
+    # Start of the strongest 0.96 s analysis frame — the anchor the audio clip is cut around.
+    peak_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mean_score: Mapped[float | None] = mapped_column(Float)
+    # Magnitude: loudest frame level in dBFS (negative; device- and route-dependent).
+    peak_db: Mapped[float | None] = mapped_column(Float)
+    # Loudness above the room's noise floor at that moment, in dB.
+    snr_db: Mapped[float | None] = mapped_column(Float)
+    # Groups coughs of one coughing fit; numbered per session.
+    bout_id: Mapped[int | None] = mapped_column(Integer)
+    # Model's guess whether it was the user: subject | other | unknown. Never used to drop events.
+    subject_label: Mapped[str | None] = mapped_column(String(16))
+    subject_confidence: Mapped[float | None] = mapped_column(Float)
+    # The user's own verdict: subject | other | not_an_event. Overrides the model in reports.
+    user_label: Mapped[str | None] = mapped_column(String(16))
+    # True when the phone kept an audio clip for this event (whether or not it was uploaded).
+    has_device_clip: Mapped[bool | None] = mapped_column(Boolean)
+    # Absolute time of the clip's first sample, so a position inside the clip maps to the
+    # timeline. Set when the clip is uploaded.
+    clip_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     session: Mapped["CoughSession"] = relationship(back_populates="events")
+    features: Mapped[list["CoughEventFeatures"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class CoughEventFeatures(Base):
+    """Measurements calculated from one event's audio clip.
+
+    Kept apart from cough_events so a measurement method can be improved and re-run
+    over every stored clip without touching the events: each method version gets its
+    own row (`method`, e.g. "acoustic-v1"). See app/services/acoustic_features.py.
+    """
+    __tablename__ = "cough_event_features"
+    __table_args__ = (
+        UniqueConstraint("event_id", "method", name="uq_cough_event_features_event_method"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cough_events.id", ondelete="CASCADE"), nullable=False, index=True)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Boundaries measured on the audio envelope (10 ms resolution), not the 0.48 s grid.
+    acoustic_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acoustic_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    acoustic_duration_ms: Mapped[int | None] = mapped_column(Integer)
+    # Magnitude, three ways. Absolute levels (dBFS) depend on phone and mic gain;
+    # prominence (loudness above the clip's own background) is comparable across phones.
+    peak_dbfs: Mapped[float | None] = mapped_column(Float)
+    rms_dbfs: Mapped[float | None] = mapped_column(Float)
+    prominence_db: Mapped[float | None] = mapped_column(Float)
+    noise_floor_dbfs: Mapped[float | None] = mapped_column(Float)
+    crest_factor_db: Mapped[float | None] = mapped_column(Float)
+    # Sound character.
+    spectral_centroid_hz: Mapped[float | None] = mapped_column(Float)
+    low_freq_ratio: Mapped[float | None] = mapped_column(Float)      # share of energy below 1 kHz
+    zero_crossing_rate: Mapped[float | None] = mapped_column(Float)  # crossings per second
+
+    event: Mapped["CoughEvent"] = relationship(back_populates="features")
+
+
+class SnoreEpisode(Base):
+    """A continuous run of snoring. Individual snores (hundreds a night) stay on the
+    device; the episode is the unit reports need."""
+    __tablename__ = "snore_episodes"
+    __table_args__ = (
+        UniqueConstraint("session_id", "started_at", name="uq_snore_episodes_session_start"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cough_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    snore_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    mean_intensity_db: Mapped[float | None] = mapped_column(Float)
+
+    session: Mapped["CoughSession"] = relationship(back_populates="snore_episodes")
+
+
+class HealthObservation(Base):
+    """
+    One individual measurement at the moment it was taken: a weight reading at 07:12,
+    another at 21:40, a blood pressure reading, a step count for a day. Many per day is
+    normal — together they form the user's timeline.
+
+    Coughs are the richer counterpart: each cough is one row in cough_events (with
+    start, end, scores and audio). Daily numbers for both are never stored; they are
+    calculated by the daily_health_summary view, and health_timeline lists coughs and
+    readings together in time order. Metric codes and units: app/metrics.py.
+    """
+    __tablename__ = "health_observations"
+    __table_args__ = (
+            # A reading sent twice (retry) with the same reading id is stored once.
+        UniqueConstraint("user_id", "metric", "source_ref", name="uq_health_observations_user_metric_ref"),
+        Index("ix_health_observations_user_metric_date", "user_id", "metric", "local_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    metric: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    unit: Mapped[str] = mapped_column(String(16), nullable=False)
+    # When it was measured. An interval (steps over a day) also has an end.
+    effective_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The user's calendar day the value belongs to — the join key for daily reports.
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # Who produced it: manual | device | import | ...
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    # The reading's id (client-chosen, for safe retries). Values measured together
+    # share it: one blood pressure reading = bp.systolic + bp.diastolic + heart.rate.
+    source_ref: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UserConsent(Base):
+    """Per-user data-processing consent. Persisted so it survives restarts and is the
+    same on every API worker — audio upload is gated on it."""
+    __tablename__ = "user_consents"
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    cough_tracking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    health_trends: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    records_processing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    product_analytics: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Upload and keep short audio clips of detected events. On by default; the user can
+    # switch it off (stops new uploads; DELETE /api/clips removes what is stored).
+    audio_clips: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    audio_clips_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

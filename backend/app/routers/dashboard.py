@@ -1,11 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, cast, Date
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentUser
 from ..database import get_db
-from ..models import CoughSession, CoughEvent
 from ..schemas import WebDashboardData, DailyPoint, ChangeCard, DashboardAverages
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -19,59 +18,35 @@ def web_dashboard(
 ):
     """
     Dashboard data for the web app (GET /api/dashboard?range=7|14|30).
-    Returns per-day cough counts; weight/steps/meds are stubbed at 0
-    until those data sources are added.
+    Read from the daily_health_summary view: a night counts on the day it ended
+    (the morning the user woke up), weight is the day's average reading and steps the
+    day's total. Medications are not tracked yet and stay 0.
     """
     days = max(1, min(days_range, 90))
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    today = datetime.now(timezone.utc).date()
+    first = today - timedelta(days=days - 1)
 
-    # Build date → cough_count map from real events
-    rows = (
-        db.query(
-            cast(CoughEvent.timestamp, Date).label("day"),
-            func.count(CoughEvent.id).label("coughs"),
-        )
-        .join(CoughSession, CoughEvent.session_id == CoughSession.id)
-        .filter(
-            CoughSession.user_id == current_user.id,
-            CoughEvent.timestamp >= since,
-        )
-        .group_by("day")
-        .order_by("day")
-        .all()
-    )
-    cough_by_day = {str(r.day): r.coughs for r in rows}
-
-    # Also pull session sleep hours per day
-    sleep_rows = (
-        db.query(
-            cast(CoughSession.started_at, Date).label("day"),
-            CoughSession.started_at,
-            CoughSession.ended_at,
-        )
-        .filter(
-            CoughSession.user_id == current_user.id,
-            CoughSession.started_at >= since,
-        )
-        .all()
-    )
-    sleep_by_day: dict[str, float] = {}
-    for r in sleep_rows:
-        if r.ended_at and r.started_at:
-            hours = round((r.ended_at - r.started_at).total_seconds() / 3600, 1)
-            sleep_by_day[str(r.day)] = min(hours, 12.0)
+    rows = db.execute(text(
+        "SELECT local_date, metric, value_sum, value_avg FROM daily_health_summary "
+        "WHERE user_id = :uid AND local_date BETWEEN :first AND :today "
+        "AND metric IN ('cough.count', 'monitoring.duration', 'body.weight', 'activity.steps')"
+    ), {"uid": current_user.id, "first": first, "today": today}).mappings()
+    by_day: dict[str, dict[str, float]] = {}
+    for r in rows:
+        value = r["value_avg"] if r["metric"] == "body.weight" else r["value_sum"]
+        by_day.setdefault(str(r["local_date"]), {})[r["metric"]] = value
 
     # Build full date range (fill gaps with zeros)
     points: list[DailyPoint] = []
     for i in range(days):
-        day = (since + timedelta(days=i + 1)).date()
-        day_str = str(day)
+        day_str = str(first + timedelta(days=i))
+        d = by_day.get(day_str, {})
         points.append(DailyPoint(
             date=day_str,
-            coughs=cough_by_day.get(day_str, 0),
-            sleepHours=sleep_by_day.get(day_str, 0.0),
-            weight=0.0,
-            steps=0,
+            coughs=int(d.get("cough.count", 0)),
+            sleepHours=round(min(d.get("monitoring.duration", 0.0), 12.0), 1),
+            weight=round(d.get("body.weight", 0.0), 1),
+            steps=int(d.get("activity.steps", 0)),
             medsTaken=0,
             medsPlanned=0,
         ))
@@ -82,10 +57,12 @@ def web_dashboard(
     avg_coughs = round(total_coughs / days_with_data, 1)
     avg_sleep = round(sum(p.sleepHours for p in points if p.sleepHours > 0) / days_with_data, 1)
 
+    weights = [p.weight for p in points if p.weight > 0]
+    steps = [p.steps for p in points if p.steps > 0]
     averages = DashboardAverages(
         coughs=avg_coughs,
-        weight=0.0,
-        steps=0.0,
+        weight=round(sum(weights) / len(weights), 1) if weights else 0.0,
+        steps=round(sum(steps) / len(steps), 0) if steps else 0.0,
         sleepHours=avg_sleep,
         adherence=0.0,
     )

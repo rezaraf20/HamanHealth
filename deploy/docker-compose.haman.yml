@@ -14,6 +14,17 @@ services:
       - SECRET_KEY=${HAMAN_SECRET_KEY}
       - ADMIN_SECRET=${ADMIN_SECRET}
       - CORS_ORIGINS=["https://hamanhealth.com","https://app.hamanhealth.com","https://admin.hamanhealth.com","capacitor://localhost"]
+      # Audio clips: on by default. The clips database (no user data) lives in the same
+      # PostgreSQL container and is created on first start.
+      - CLIPS_DATABASE_URL=postgresql://haman:${HAMAN_DB_PASS}@haman-db:5432/hamanclips
+      # Optional. If empty, a key is generated into the haman-keys volume on first start
+      # (back that file up; without it clips cannot be decrypted).
+      - CLIPS_ENCRYPTION_KEY=${HAMAN_CLIPS_KEY:-}
+    volumes:
+      # Encrypted clip files. Kept out of the image so a rebuild doesn't delete them.
+      - haman-clips:/var/haman/clips
+      # The clip key, on a separate volume from the clips.
+      - haman-keys:/var/haman/keys
     depends_on:
       haman-db:
         condition: service_healthy
@@ -40,6 +51,8 @@ services:
 
 volumes:
   haman-pgdata:
+  haman-clips:
+  haman-keys:
 
 networks:
   haman-net:

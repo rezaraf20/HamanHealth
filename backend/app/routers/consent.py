@@ -1,11 +1,15 @@
 """
 Consent API — stores per-user data-processing consent flags.
 GET is public (returns defaults for unauthenticated users).
-PUT requires a valid JWT.
+PUT requires a valid JWT to persist; without one it echoes the values back unsaved
+(the onboarding screen can render before the account exists).
 
 Endpoints:
   GET  /api/consent   — get current user's consent state (or defaults)
-  PUT  /api/consent   — update current user's consent state (auth required)
+  PUT  /api/consent   — update current user's consent state (partial updates)
+
+Stored in the user_consents table. audioClips is on unless the user switches it off;
+switching it off stops new clip uploads (DELETE /api/clips removes stored ones).
 """
 
 from datetime import datetime, timezone
@@ -13,16 +17,15 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from ..auth import CurrentUser
 from ..config import get_settings
+from ..database import get_db
+from ..models import User, UserConsent
 
 router = APIRouter(prefix="/api/consent", tags=["consent"])
 _settings = get_settings()
 _bearer = HTTPBearer(auto_error=False)
-
-# In-memory store: {user_id: ConsentState dict}
-_consent_store: dict[int, dict] = {}
 
 
 class ConsentState(BaseModel):
@@ -30,7 +33,19 @@ class ConsentState(BaseModel):
     healthTrends: bool = False
     recordsProcessing: bool = False
     productAnalytics: bool = False
+    # Upload short audio clips of detected events. On by default.
+    audioClips: bool = True
     acceptedAt: str | None = None
+
+
+# API field → table column
+_FIELDS = {
+    "coughTracking": "cough_tracking",
+    "healthTrends": "health_trends",
+    "recordsProcessing": "records_processing",
+    "productAnalytics": "product_analytics",
+    "audioClips": "audio_clips",
+}
 
 
 def _optional_user_id(
@@ -46,20 +61,48 @@ def _optional_user_id(
         return None
 
 
+def _to_state(row: UserConsent | None) -> ConsentState:
+    if row is None:
+        return ConsentState()
+    return ConsentState(
+        **{api: getattr(row, col) for api, col in _FIELDS.items()},
+        acceptedAt=row.accepted_at.isoformat() if row.accepted_at else None,
+    )
+
+
 @router.get("", response_model=ConsentState)
-def get_consent(user_id: int | None = Depends(_optional_user_id)):
+def get_consent(user_id: int | None = Depends(_optional_user_id), db: Session = Depends(get_db)):
     if user_id is None:
         return ConsentState()
-    data = _consent_store.get(user_id)
-    return ConsentState(**(data or {}))
+    return _to_state(db.get(UserConsent, user_id))
 
 
 @router.put("", response_model=ConsentState)
-def update_consent(body: ConsentState, user_id: int | None = Depends(_optional_user_id)):
-    uid = user_id or 0  # store under 0 for unauthenticated (onboarding flow)
-    existing = _consent_store.get(uid, {})
-    updated = {**existing, **body.model_dump(exclude_none=True)}
-    if not updated.get("acceptedAt"):
-        updated["acceptedAt"] = datetime.now(timezone.utc).isoformat()
-    _consent_store[uid] = updated
-    return ConsentState(**updated)
+def update_consent(
+    body: ConsentState,
+    user_id: int | None = Depends(_optional_user_id),
+    db: Session = Depends(get_db),
+):
+    # Only fields the client actually sent. A client that doesn't know about a flag
+    # (e.g. audioClips) must not reset it to False by omission.
+    sent = body.model_dump(exclude_unset=True)
+
+    if user_id is None or db.get(User, user_id) is None:
+        return ConsentState(**{**ConsentState().model_dump(), **sent})
+
+    row = db.get(UserConsent, user_id)
+    if row is None:
+        row = UserConsent(user_id=user_id, **{col: getattr(ConsentState(), api) for api, col in _FIELDS.items()})
+        db.add(row)
+
+    now = datetime.now(timezone.utc)
+    for api, col in _FIELDS.items():
+        if api in sent and getattr(row, col) != sent[api]:
+            setattr(row, col, sent[api])
+            if col == "audio_clips":
+                row.audio_clips_changed_at = now
+    if row.accepted_at is None:
+        row.accepted_at = now
+    db.commit()
+    db.refresh(row)
+    return _to_state(row)
