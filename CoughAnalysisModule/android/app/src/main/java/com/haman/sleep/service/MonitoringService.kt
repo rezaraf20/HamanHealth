@@ -25,6 +25,7 @@ import com.haman.domain.AcousticClass
 import com.haman.domain.DetectionPipeline
 import com.haman.domain.DetectorConfig
 import com.haman.domain.InputNormalizer
+import com.haman.domain.PlatformContract
 import com.haman.domain.SpectralStats
 import com.haman.inference.YamnetClassifier
 import com.haman.sleep.MainActivity
@@ -106,6 +107,8 @@ class MonitoringService : Service() {
                 appVersion = appVersion(),
                 audioSource = cap.activeRoute.toString(),
                 configJson = config.toJson(),
+                timezone = java.util.TimeZone.getDefault().id,
+                sensitivity = prefs.readSensitivity(),
             )
         )
         val writer = SessionWriter(db, sessionId)
@@ -238,17 +241,24 @@ class MonitoringService : Service() {
         MonitorState.update { it.copy(running = false) }
     }
 
-    /** 2.5 s around the event, including pre-roll from before detection completed. */
+    /**
+     * 2.5 s around the event, including pre-roll from before detection completed.
+     *
+     * The clip always starts [PlatformContract.CLIP_PRE_ROLL_MS] before the peak frame -
+     * the server relies on that to place the clip on the timeline. An event closed by
+     * its maximum duration can close before the tail has been recorded; the clip is
+     * then cut short rather than padded with older audio.
+     */
     private fun saveClip(
         ring: AudioRingBuffer, dir: File, peakFrameMs: Long,
         sessionStart: Long, sampleRate: Int, cls: String, eventStartMs: Long,
     ): String? {
-        val preRollMs = 750L
         val clipMs = 2500L
-        val startRelMs = (peakFrameMs - sessionStart) - preRollMs
+        val startRelMs = (peakFrameMs - sessionStart) - PlatformContract.CLIP_PRE_ROLL_MS
         if (startRelMs < 0) return null
         val startSample = startRelMs * sampleRate / 1000
-        val count = (clipMs * sampleRate / 1000).toInt()
+        val count = minOf(clipMs * sampleRate / 1000, ring.position() - startSample).toInt()
+        if (count <= 0) return null
         val pcm = ring.read(startSample + count, count) ?: return null
         val file = File(dir, "${cls}_$eventStartMs.wav")
         return runCatching {

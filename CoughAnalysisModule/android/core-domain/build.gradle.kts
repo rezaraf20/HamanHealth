@@ -6,6 +6,7 @@ plugins {
 }
 kotlin { jvmToolchain(17) }
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
+    // api, not implementation: JsonElement appears in PlatformContract, which core-data uses.
+    api(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }

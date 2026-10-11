@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.haman.data.EventEntity
 import com.haman.data.HamanDatabase
+import com.haman.data.PlatformPayload
 import com.haman.data.SessionEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -71,5 +72,42 @@ class DatabaseIntegrityTest {
         // Cascade delete must take the events with it, or clearing a night leaves orphans.
         db.sessions().delete(id)
         assertEquals(0, db.events().countFor(id))
+    }
+
+    @Test
+    fun platform_payload_reads_the_v2_columns(): Unit = runBlocking {
+        val db = HamanDatabase.get(context)
+        val id = db.sessions().insert(
+            SessionEntity(
+                startedAt = 1_760_043_600_000L, endedAt = 1_760_072_400_000L,
+                deviceModel = "test", appVersion = "test", audioSource = "VOICE_RECOGNITION",
+                configJson = "{}", status = SessionEntity.STATUS_COMPLETE,
+                timezone = "Europe/Amsterdam", sensitivity = 0.5f,
+            )
+        )
+        db.events().insertAll(
+            listOf(
+                EventEntity(sessionId = id, cls = "COUGH", startedAtMs = 1_760_048_103_120L,
+                    endedAtMs = 1_760_048_104_560L, peakScore = 0.9f, meanScore = 0.7f,
+                    peakDb = -21f, snrDb = 38f, boutId = 1, peakFrameMs = 1_760_048_103_600L,
+                    clipPath = "/x.wav"),
+                // Individual snores stay on the phone.
+                EventEntity(sessionId = id, cls = "SNORE", startedAtMs = 1_760_050_000_000L,
+                    endedAtMs = 1_760_050_001_000L, peakScore = 0.6f, meanScore = 0.5f,
+                    peakDb = -35f, snrDb = 20f),
+            )
+        )
+        val p = PlatformPayload.build(db, id, "install-1")!!
+        assertEquals("install-1:$id", p.deviceSessionId)
+        assertEquals("Europe/Amsterdam", p.timezone)
+        assertEquals("medium", p.sensitivity)
+        assertEquals(1, p.events.size)
+        with(p.events.single()) {
+            assertEquals("cough", eventType)
+            assertEquals("2025-10-09T22:15:03.120Z", timestamp)
+            assertEquals("2025-10-09T22:15:03.600Z", peakAt)
+            assertTrue(hasDeviceClip)
+        }
+        db.sessions().delete(id)
     }
 }

@@ -1,6 +1,7 @@
 package com.haman.data
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -14,8 +15,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MinuteRollupEntity::class,
         LabelEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
+    // v2 only adds nullable columns (timezone, sensitivity, peakFrameMs), which Room
+    // migrates from the exported schemas without losing existing nights.
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class HamanDatabase : RoomDatabase() {
     abstract fun sessions(): SessionDao

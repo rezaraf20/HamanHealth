@@ -174,6 +174,25 @@ Audio clips: 2 s (0.75 s pre-roll + event + tail) at 16 kHz, on-device only, in
 app-private storage, auto-deleted after a configurable retention window. They exist so
 a false positive can be *audited* and *labeled* — which is the only path to §4.
 
+### Platform sync
+
+The HamanHealth platform backend (`platform` branch, FastAPI + PostgreSQL) receives a
+night through `POST /api/sessions/sync`. The JSON contract is
+`core-domain/.../PlatformContract.kt`; `core-data/.../PlatformPayload.kt` builds it from
+this database. Uploaded: the session context, every cough and sneeze (start, end,
+peak time, scores, level, SNR, bout, attribution, user label), and snore *episodes*.
+Kept on the phone: individual snores, minute rollups, embeddings. Audio clips (on by
+default, user can switch off) go through a separate endpoint; the server stores them
+encrypted and measures each one (ms-accurate start/end, loudness above background,
+spectral shape). Every clip starts `PlatformContract.CLIP_PRE_ROLL_MS` before the
+peak frame, which is how the server places it on the timeline. Re-sending a night is
+safe because the server merges on event id, so sync again after the user labels events.
+
+Schema v2 added `sessions.timezone`, `sessions.sensitivity` and `events.peakFrameMs`
+(nullable, Room auto-migration) so the server can put a night on the right calendar day
+and line a clip up with the timeline. The server side is documented in
+`backend/docs/COUGH_DATA.md` on the platform branch.
+
 ---
 
 ## 4. Rejecting other people's coughs

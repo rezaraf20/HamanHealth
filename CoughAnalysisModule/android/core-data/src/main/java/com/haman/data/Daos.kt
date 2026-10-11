@@ -43,6 +43,24 @@ data class ExportRow(
     val userLabel: String?,
 )
 
+/** One event as the platform backend needs it. No embedding, no clip path. */
+data class UploadRow(
+    val id: Long,
+    val cls: String,
+    val startedAtMs: Long,
+    val endedAtMs: Long,
+    val peakFrameMs: Long?,
+    val peakScore: Float,
+    val meanScore: Float,
+    val peakDb: Float,
+    val snrDb: Float,
+    val boutId: Long?,
+    val subjectLabel: String,
+    val subjectConfidence: Float,
+    val userLabel: String?,
+    val hasClip: Boolean,
+)
+
 /** Enough of an event to render and label it, without loading the embedding blob. */
 data class EventSummary(
     val id: Long,
@@ -121,6 +139,15 @@ interface EventDao {
     )
     suspend fun forExport(sessionId: Long): List<ExportRow>
 
+    @Query(
+        "SELECT e.id, e.cls, e.startedAtMs, e.endedAtMs, e.peakFrameMs, e.peakScore, " +
+        "e.meanScore, e.peakDb, e.snrDb, e.boutId, e.subjectLabel, e.subjectConfidence, " +
+        "l.userLabel, (e.clipPath IS NOT NULL) AS hasClip " +
+        "FROM events e LEFT JOIN labels l ON l.eventId = e.id " +
+        "WHERE e.sessionId = :sessionId AND e.cls IN (:classes) ORDER BY e.startedAtMs ASC"
+    )
+    suspend fun forUpload(sessionId: Long, classes: List<String>): List<UploadRow>
+
     @Query("SELECT clipPath FROM events WHERE clipPath IS NOT NULL AND startedAtMs < :before")
     suspend fun clipsOlderThan(before: Long): List<String>
 
@@ -138,6 +165,9 @@ interface EpisodeDao {
 
     @Query("SELECT * FROM snore_episodes WHERE sessionId = :sessionId ORDER BY startMs ASC")
     fun observeFor(sessionId: Long): Flow<List<SnoreEpisodeEntity>>
+
+    @Query("SELECT * FROM snore_episodes WHERE sessionId = :sessionId ORDER BY startMs ASC")
+    suspend fun forSession(sessionId: Long): List<SnoreEpisodeEntity>
 
     @Query("SELECT COALESCE(SUM(endMs - startMs), 0) FROM snore_episodes WHERE sessionId = :sessionId")
     suspend fun totalSnoreMs(sessionId: Long): Long

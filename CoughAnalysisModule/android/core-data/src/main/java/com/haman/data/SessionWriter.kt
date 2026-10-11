@@ -43,6 +43,7 @@ class SessionWriter(
                 clipPath = clipPath,
                 embedding = q?.bytes,
                 embeddingScale = q?.scale,
+                peakFrameMs = event.peakFrameMs,
             )
         )
         totalEvents++

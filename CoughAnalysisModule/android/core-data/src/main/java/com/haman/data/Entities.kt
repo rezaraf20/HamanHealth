@@ -30,6 +30,12 @@ data class SessionEntity(
     /** Milliseconds the microphone was unavailable (phone call, another app). Logged
      *  explicitly so a short night is distinguishable from a quiet one. */
     val micGapMs: Long = 0,
+    /** IANA zone at session start (e.g. "Europe/Amsterdam"). Decides which calendar
+     *  day the night is reported under; the device zone at upload time may differ if
+     *  the user travelled. Null for sessions recorded before schema v2. */
+    val timezone: String? = null,
+    /** Sensitivity dial (0-1) the night was recorded with. Null before schema v2. */
+    val sensitivity: Float? = null,
 ) {
     companion object {
         const val STATUS_RUNNING = "running"
@@ -65,6 +71,9 @@ data class EventEntity(
     /** int8-quantised embedding; see EmbeddingCodec. Prunable without losing the event. */
     val embedding: ByteArray? = null,
     val embeddingScale: Float? = null,
+    /** Start of the strongest analysis frame; the audio clip is cut around it.
+     *  Null for events recorded before schema v2. */
+    val peakFrameMs: Long? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -75,6 +84,7 @@ data class EventEntity(
             peakDb == other.peakDb && snrDb == other.snrDb && boutId == other.boutId &&
             subjectLabel == other.subjectLabel && subjectConfidence == other.subjectConfidence &&
             clipPath == other.clipPath && embeddingScale == other.embeddingScale &&
+            peakFrameMs == other.peakFrameMs &&
             (embedding?.contentEquals(other.embedding) ?: (other.embedding == null))
     }
 

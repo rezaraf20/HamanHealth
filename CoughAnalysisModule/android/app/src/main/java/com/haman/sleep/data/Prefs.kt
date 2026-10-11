@@ -27,6 +27,13 @@ class Prefs(context: Context) {
     fun readAudioRoute(): String? = sp.getString(KEY_AUDIO_ROUTE, null)
     fun writeAudioRoute(v: String?) = sp.edit().putString(KEY_AUDIO_ROUTE, v).apply()
 
+    /** Random per-install id; prefixes session ids sent to the platform so a reinstall
+     *  (which restarts Room ids at 1) cannot collide with nights already uploaded. */
+    fun installId(): String = sp.getString(KEY_INSTALL_ID, null) ?: synchronized(this) {
+        sp.getString(KEY_INSTALL_ID, null)
+            ?: java.util.UUID.randomUUID().toString().also { sp.edit().putString(KEY_INSTALL_ID, it).commit() }
+    }
+
     fun readCalibration(): ProximityCalibration? {
         val n = sp.getInt(KEY_CAL_COUNT, 0)
         if (n < ProximityCalibration.MIN_SAMPLES) return null
@@ -54,5 +61,6 @@ class Prefs(context: Context) {
         const val KEY_CAL_SD = "cal_sd_db"
         const val KEY_CAL_COUNT = "cal_count"
         const val KEY_AUDIO_ROUTE = "audio_route"
+        const val KEY_INSTALL_ID = "install_id"
     }
 }

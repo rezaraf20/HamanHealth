@@ -32,12 +32,15 @@ class AudioRingBuffer(private val capacity: Int) {
 
     /**
      * Copy [count] samples ending at absolute index [endSample].
-     * @return null if that range has already been overwritten.
+     * @return null if that range has already been overwritten or not yet been written.
+     *   Without the second check the unwritten tail came back as audio from one buffer
+     *   length earlier, silently glued onto the clip.
      */
     @Synchronized
     fun read(endSample: Long, count: Int): ShortArray? {
         val start = endSample - count
         if (count > capacity || start < 0) return null
+        if (endSample > totalWritten) return null // not recorded yet
         if (totalWritten - start > capacity) return null // already overwritten
         val out = ShortArray(count)
         var startIndex = ((start % capacity) + capacity).toInt() % capacity
