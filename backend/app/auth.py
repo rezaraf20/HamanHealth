@@ -29,6 +29,18 @@ def create_access_token(user_id: int) -> str:
     return jwt.encode({"sub": str(user_id), "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
 
 
+def decode_token(token: str) -> int | None:
+    """Decode a JWT and return user_id, or None if invalid/expired."""
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id_str: str | None = payload.get("sub")
+        if user_id_str is None:
+            return None
+        return int(user_id_str)
+    except JWTError:
+        return None
+
+
 def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Annotated[Session, Depends(get_db)],

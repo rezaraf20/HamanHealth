@@ -14,6 +14,8 @@ services:
       - SECRET_KEY=${HAMAN_SECRET_KEY}
       - ADMIN_SECRET=${ADMIN_SECRET}
       - CORS_ORIGINS=["https://hamanhealth.com","https://app.hamanhealth.com","https://admin.hamanhealth.com","capacitor://localhost"]
+    volumes:
+      - haman-records:/data/records
     depends_on:
       haman-db:
         condition: service_healthy
@@ -40,6 +42,7 @@ services:
 
 volumes:
   haman-pgdata:
+  haman-records:
 
 networks:
   haman-net:
