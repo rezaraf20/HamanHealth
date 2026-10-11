@@ -50,6 +50,8 @@ export interface CoughSessionBridge {
 }
 
 import { createMockCoughSession } from "./cough-session.mock";
+import { createWebCoughSession } from "./cough-session.web";
+import { USE_MOCKS } from "./api";
 
 type BridgeFactory = () => CoughSessionBridge;
 
@@ -68,6 +70,8 @@ function createCoughSession(): CoughSessionBridge {
     const factory = nativeFactories['capacitor'];
     if (factory) return factory();
   }
+  // Use the real web bridge when connected to the backend, mock otherwise.
+  if (!USE_MOCKS) return createWebCoughSession();
   return createMockCoughSession();
 }
 
