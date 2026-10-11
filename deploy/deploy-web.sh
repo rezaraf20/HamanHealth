@@ -33,6 +33,15 @@ MARKER="# haman-app.hamanhealth.com — DO NOT REMOVE"
 echo "=== Haman Health — web deploy to ${APP_SUBDOMAIN} ==="
 
 # ── Validate build dir ────────────────────────────────────────────────────────
+# scp of a directory with a trailing slash lands the *contents* directly inside
+# the destination; without a trailing slash it creates a subdirectory.  Handle
+# both: if index.html is one level deeper (e.g. BUILD_DIR/public/index.html),
+# descend into that subdirectory automatically.
+if [ -f "$BUILD_DIR/public/index.html" ] && [ ! -f "$BUILD_DIR/index.html" ]; then
+  BUILD_DIR="$BUILD_DIR/public"
+  echo "Auto-detected build in $BUILD_DIR"
+fi
+
 if [ ! -f "$BUILD_DIR/index.html" ]; then
   echo "ERROR: $BUILD_DIR/index.html not found."
   echo ""
