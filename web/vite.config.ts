@@ -11,6 +11,6 @@ export default defineConfig({
   // emits a static client folder with index.html at its root (Capacitor-ready).
   tanstackStart: {
     spa: { enabled: true, prerender: { outputPath: "/index.html" } },
-    prerender: { enabled: true, autoStaticPathsDiscovery: false },
+    prerender: { enabled: false },
   },
 });
