@@ -5,6 +5,7 @@ import { Activity, Bell, Footprints, Moon, Pill, Scale, Wind } from "lucide-reac
 import { AppShell } from "@/components/app-shell";
 import { HourlyBars } from "@/components/charts";
 import { ChangeNoticedCard, Disclaimer, SectionTitle, Skeleton, StatCard } from "@/components/haman-ui";
+import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
@@ -50,8 +51,8 @@ function HomePage() {
             <button aria-label="Notifications" className="pill grid size-10 place-items-center text-foreground">
               <Bell className="size-4" />
             </button>
-            <Link to="/account" className="grid size-10 place-items-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
-              {user?.avatarInitials}
+            <Link to="/account" aria-label="Profile" className="rounded-full">
+              <UserAvatar user={user} className="size-10 text-xs" />
             </Link>
           </div>
         </div>

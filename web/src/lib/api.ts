@@ -25,6 +25,8 @@ export type User = {
   twoFactorEnabled: boolean;
   createdAt: string;
   avatarInitials: string;
+  /** Profile photo as a data: URL, or null to show the initials. */
+  avatarUrl: string | null;
 };
 
 export type ConsentState = {
@@ -306,6 +308,9 @@ export const api = {
   account: {
     updateProfile: (patch: Partial<Pick<User, "name" | "locale">>) =>
       USE_MOCKS ? mocks.updateProfile(patch) : request<User>("/account/profile", { method: "PATCH", body: json(patch) }),
+    setAvatar: (dataUrl: string) =>
+      USE_MOCKS ? mocks.setAvatar(dataUrl) : request<User>("/account/avatar", { method: "PUT", body: json({ dataUrl }) }),
+    removeAvatar: () => (USE_MOCKS ? mocks.setAvatar(null) : request<User>("/account/avatar", { method: "DELETE" })),
     changePassword: (current: string, next: string) =>
       USE_MOCKS
         ? mocks.ok()

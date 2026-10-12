@@ -7,6 +7,7 @@ import { useI18n, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
 import { SupportChat } from "./support-chat";
+import { UserAvatar } from "./user-avatar";
 
 type NavItem = { to: string; icon: LucideIcon; label: MessageKey; mobile?: boolean };
 
@@ -79,9 +80,7 @@ export function AppShell({
               ))}
             </nav>
             <div className="mt-4 flex items-center gap-3 rounded-2xl border border-sidebar-border p-3">
-              <div className="grid size-9 shrink-0 place-items-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
-                {user.avatarInitials}
-              </div>
+              <UserAvatar user={user} className="size-9 text-xs" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{user.name}</p>
                 <p className="truncate text-xs text-muted-foreground">{user.email}</p>

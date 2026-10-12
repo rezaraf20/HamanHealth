@@ -21,6 +21,8 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Profile photo as a small data: URL (the web app resizes before upload); NULL = initials.
+    avatar: Mapped[str | None] = mapped_column(Text)
 
     sessions: Mapped[list["CoughSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 

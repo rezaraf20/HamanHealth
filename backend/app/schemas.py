@@ -38,6 +38,8 @@ class UserOut(BaseModel):
     locale: str = "en"
     twoFactorEnabled: bool = False
     avatarInitials: str = ""
+    avatarUrl: str | None = None
+    createdAt: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -50,7 +52,9 @@ class UserOut(BaseModel):
             email=user.email,
             name=user.name,
             created_at=user.created_at,
+            createdAt=user.created_at,
             avatarInitials=initials,
+            avatarUrl=user.avatar,
         )
 
 

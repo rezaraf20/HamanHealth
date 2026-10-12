@@ -20,7 +20,8 @@ from pydantic import BaseModel
 from ..auth import CurrentUser
 from ..config import get_settings
 from ..database import get_db
-from ..models import User, CoughSession, CoughEvent
+from ..models import User, CoughSession, CoughEvent, HealthObservation, UserConsent
+from .records import HealthRecord
 
 settings = get_settings()
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -54,6 +55,10 @@ class UserSummary(BaseModel):
     total_sessions: int
     total_coughs: int
     last_session_at: datetime | None
+    # What else is stored for this user
+    total_records: int = 0
+    total_readings: int = 0
+    consent_accepted_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -91,6 +96,31 @@ _app_config = AppConfig()
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
+def _summarize(db: Session, u: User) -> UserSummary:
+    def count(column) -> int:
+        return db.query(func.count()).filter(column == u.id).scalar() or 0
+
+    total_coughs, last_session = (
+        db.query(func.sum(CoughSession.event_count), func.max(CoughSession.started_at))
+        .filter(CoughSession.user_id == u.id)
+        .one()
+    )
+    return UserSummary(
+        id=u.id,
+        email=u.email,
+        name=u.name,
+        is_active=u.is_active,
+        is_admin=u.is_admin,
+        created_at=u.created_at,
+        total_sessions=count(CoughSession.user_id),
+        total_coughs=total_coughs or 0,
+        last_session_at=last_session,
+        total_records=count(HealthRecord.user_id),
+        total_readings=count(HealthObservation.user_id),
+        consent_accepted_at=db.query(UserConsent.accepted_at).filter(UserConsent.user_id == u.id).scalar(),
+    )
+
+
 @router.get("/users", response_model=list[UserSummary])
 def list_users(
     limit: int = 100,
@@ -105,36 +135,7 @@ def list_users(
         .limit(limit)
         .all()
     )
-    result = []
-    for u in users:
-        total_sessions = (
-            db.query(func.count(CoughSession.id))
-            .filter(CoughSession.user_id == u.id)
-            .scalar()
-        ) or 0
-        total_coughs = (
-            db.query(func.sum(CoughSession.event_count))
-            .filter(CoughSession.user_id == u.id)
-            .scalar()
-        ) or 0
-        last_session = (
-            db.query(CoughSession.started_at)
-            .filter(CoughSession.user_id == u.id)
-            .order_by(CoughSession.started_at.desc())
-            .scalar()
-        )
-        result.append(UserSummary(
-            id=u.id,
-            email=u.email,
-            name=u.name,
-            is_active=u.is_active,
-            is_admin=u.is_admin,
-            created_at=u.created_at,
-            total_sessions=total_sessions,
-            total_coughs=total_coughs,
-            last_session_at=last_session,
-        ))
-    return result
+    return [_summarize(db, u) for u in users]
 
 
 @router.get("/users/{user_id}", response_model=UserSummary)
@@ -142,33 +143,7 @@ def get_user(user_id: int, _admin=AdminUser, db: Session = Depends(get_db)):
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
-    total_sessions = (
-        db.query(func.count(CoughSession.id))
-        .filter(CoughSession.user_id == u.id)
-        .scalar()
-    ) or 0
-    total_coughs = (
-        db.query(func.sum(CoughSession.event_count))
-        .filter(CoughSession.user_id == u.id)
-        .scalar()
-    ) or 0
-    last_session = (
-        db.query(CoughSession.started_at)
-        .filter(CoughSession.user_id == u.id)
-        .order_by(CoughSession.started_at.desc())
-        .scalar()
-    )
-    return UserSummary(
-        id=u.id,
-        email=u.email,
-        name=u.name,
-        is_active=u.is_active,
-        is_admin=u.is_admin,
-        created_at=u.created_at,
-        total_sessions=total_sessions,
-        total_coughs=total_coughs,
-        last_session_at=last_session,
-    )
+    return _summarize(db, u)
 
 
 @router.put("/users/{user_id}", response_model=UserSummary)

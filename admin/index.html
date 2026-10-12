@@ -212,13 +212,16 @@
               <th>Joined</th>
               <th>Sessions</th>
               <th>Coughs</th>
+              <th>Records</th>
+              <th>Readings</th>
+              <th>Consent</th>
               <th>Last Active</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="users-tbody">
-            <tr class="loading-row"><td colspan="8"><span class="spinner"></span> Loading…</td></tr>
+            <tr class="loading-row"><td colspan="11"><span class="spinner"></span> Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -410,9 +413,9 @@ async function loadStats() {
 // ── Users ─────────────────────────────────────────────────────────────────────
 async function loadUsers() {
   const tbody = document.getElementById('users-tbody');
-  tbody.innerHTML = '<tr class="loading-row"><td colspan="8"><span class="spinner"></span> Loading…</td></tr>';
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="11"><span class="spinner"></span> Loading…</td></tr>';
   const res = await adminFetch('/admin/users');
-  if (!res.ok) { tbody.innerHTML = '<tr class="loading-row"><td colspan="8">Failed to load users.</td></tr>'; return; }
+  if (!res.ok) { tbody.innerHTML = '<tr class="loading-row"><td colspan="11">Failed to load users.</td></tr>'; return; }
   const users = await res.json();
   tbody.innerHTML = users.map(u => `
     <tr>
@@ -424,6 +427,9 @@ async function loadUsers() {
       <td style="font-size:.8rem;color:var(--text-muted)">${fmtDate(u.created_at)}</td>
       <td>${u.total_sessions}</td>
       <td>${u.total_coughs.toLocaleString()}</td>
+      <td>${u.total_records ?? 0}</td>
+      <td>${u.total_readings ?? 0}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${u.consent_accepted_at ? fmtDate(u.consent_accepted_at) : '—'}</td>
       <td style="font-size:.8rem;color:var(--text-muted)">${u.last_session_at ? fmtDate(u.last_session_at) : '—'}</td>
       <td>
         ${u.is_active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-red">Disabled</span>'}

@@ -55,6 +55,7 @@ let user: User = {
   twoFactorEnabled: true,
   createdAt: "2026-05-02T10:00:00Z",
   avatarInitials: "AM",
+  avatarUrl: null,
 };
 
 const CONSENT_KEY = "haman.mock.consent";
@@ -96,7 +97,7 @@ export async function register(name: string, email: string) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
-  user = { ...user, name, email, avatarInitials: initials || "HH", twoFactorEnabled: false };
+  user = { ...user, name, email, avatarInitials: initials || "HH", avatarUrl: null, twoFactorEnabled: false };
   consent = { coughTracking: false, healthTrends: false, recordsProcessing: false, productAnalytics: false, acceptedAt: null };
   if (typeof window !== "undefined") window.localStorage.removeItem(CONSENT_KEY);
   const t = tokens();
@@ -353,6 +354,12 @@ export async function removeRecord(id: string) {
 export async function updateProfile(patch: Partial<Pick<User, "name" | "locale">>) {
   await wait();
   user = { ...user, ...patch };
+  return user;
+}
+
+export async function setAvatar(avatarUrl: string | null) {
+  await wait();
+  user = { ...user, avatarUrl };
   return user;
 }
 
