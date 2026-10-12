@@ -13,9 +13,9 @@ export const Route = createFileRoute("/session/active")({
   head: () => ({
     meta: [
       { title: "Session active — Haman Health" },
-      { name: "description", content: "Your night session is running. Only cough counts are recorded — never audio." },
+      { name: "description", content: "Your night session is running." },
       { property: "og:title", content: "Session active — Haman Health" },
-      { property: "og:description", content: "Your night session is running. Only cough counts are recorded — never audio." },
+      { property: "og:description", content: "Your night session is running." },
     ],
   }),
   component: ActiveSessionPage,
@@ -103,7 +103,7 @@ function ActiveSessionPage() {
         <div className="space-y-3">
           <div className="flex items-start gap-3 rounded-[var(--radius)] bg-card p-4 text-sm text-muted-foreground">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" />
-            <p>Only the time and count of each cough is stored. Audio is never recorded or uploaded.</p>
+            <p>{t("privacy_note")}</p>
           </div>
           <button onClick={end} className="inline-flex h-12 w-full items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
             {t("end_session")}

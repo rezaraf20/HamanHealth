@@ -9,12 +9,13 @@ from pydantic import BaseModel
 
 from ..auth import CurrentUser
 from ..database import get_db
-from ..models import CoughSession, CoughEvent
+from ..models import CoughSession, CoughEvent, SnoreEpisode
 from ..services.cough_ingest import counts_for_user, upsert_session
 from ..schemas import (
     SessionUploadRequest, SessionOut,
     DashboardSummary, DailyCount,
     NightSummary, HourlyPoint,
+    NightListItem, NightDetail, NightEvent, NightSnoreEpisode,
     WebDashboardData, DailyPoint, ChangeCard, DashboardAverages,
 )
 
@@ -138,6 +139,86 @@ def end_session(session_id: int, current_user: CurrentUser = ..., db: Session = 
     db.commit()
     db.refresh(s)
     return NightSessionOut.from_orm(s)
+
+
+# ---- Nights: what was heard, for the web app ----
+
+def _night_items(db: Session, sessions: list[CoughSession]) -> list[NightListItem]:
+    """Per-night counts for these sessions, in the same order."""
+    ids = [s.id for s in sessions]
+    if not ids:
+        return []
+    counted = CoughEvent.user_label.is_(None) | (CoughEvent.user_label == "subject")
+    events = {r.session_id: r for r in db.query(
+        CoughEvent.session_id,
+        func.count().filter(CoughEvent.event_type == "cough", counted).label("coughs"),
+        func.count().filter(CoughEvent.event_type == "sneeze", counted).label("sneezes"),
+        func.count().filter(CoughEvent.clip_anon_id.is_not(None)).label("clips"),
+    ).filter(CoughEvent.session_id.in_(ids)).group_by(CoughEvent.session_id)}
+    snoring = dict(db.query(
+        SnoreEpisode.session_id,
+        func.sum(func.extract("epoch", SnoreEpisode.ended_at - SnoreEpisode.started_at)),
+    ).filter(SnoreEpisode.session_id.in_(ids)).group_by(SnoreEpisode.session_id).all())
+
+    items = []
+    for s in sessions:
+        e = events.get(s.id)
+        tz = ZoneInfo(s.timezone) if s.timezone else timezone.utc
+        items.append(NightListItem(
+            id=s.id,
+            startedAt=s.started_at,
+            endedAt=s.ended_at,
+            date=(s.ended_at or s.started_at).astimezone(tz).strftime("%Y-%m-%d"),
+            timezone=s.timezone,
+            source="web" if s.device_session_id.startswith("web-") else "app",
+            coughs=e.coughs if e else 0,
+            sneezes=e.sneezes if e else 0,
+            snoreMinutes=round(float(snoring.get(s.id) or 0) / 60, 1),
+            clips=e.clips if e else 0,
+        ))
+    return items
+
+
+@router.get("/nights", response_model=list[NightListItem])
+def list_nights(current_user: CurrentUser, limit: int = 30, db: Session = Depends(get_db)):
+    """The user's most recent nights with what was heard in each, newest first."""
+    sessions = (
+        db.query(CoughSession)
+        .filter(CoughSession.user_id == current_user.id)
+        .order_by(CoughSession.started_at.desc())
+        .limit(max(1, min(limit, 200)))
+        .all()
+    )
+    return _night_items(db, sessions)
+
+
+@router.get("/nights/{session_id}", response_model=NightDetail)
+def get_night(session_id: int, current_user: CurrentUser, db: Session = Depends(get_db)):
+    """One night in full: every cough and sneeze (with its clip, if one was uploaded)
+    and every snoring episode, in time order."""
+    s = db.get(CoughSession, session_id)
+    if not s or s.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Night not found")
+    events = (
+        db.query(CoughEvent).filter(CoughEvent.session_id == s.id)
+        .order_by(CoughEvent.timestamp, CoughEvent.id).all()
+    )
+    episodes = (
+        db.query(SnoreEpisode).filter(SnoreEpisode.session_id == s.id)
+        .order_by(SnoreEpisode.started_at).all()
+    )
+    return NightDetail(
+        **_night_items(db, [s])[0].model_dump(),
+        events=[NightEvent(
+            id=e.id, type=e.event_type, at=e.timestamp, endedAt=e.ended_at, durationMs=e.duration_ms,
+            confidence=e.confidence, loudnessDb=e.peak_db, userLabel=e.user_label,
+            counted=e.user_label in (None, "subject"), clipId=e.clip_anon_id,
+        ) for e in events],
+        snoreEpisodes=[NightSnoreEpisode(
+            startedAt=ep.started_at, endedAt=ep.ended_at, snoreCount=ep.snore_count,
+            meanIntensityDb=ep.mean_intensity_db,
+        ) for ep in episodes],
+    )
 
 
 # ---- Sync endpoint (mobile app) ----
@@ -289,15 +370,20 @@ def last_summary(current_user: CurrentUser, db: Session = Depends(get_db)):
 
     note = "Most cough events clustered in the early hours." if last.event_count > 0 else "No cough events recorded this session."
 
+    night = _night_items(db, [last])[0]
     return NightSummary(
         # The morning the night ended, as on the dashboard.
-        date=(last.ended_at or last.started_at).astimezone(tz).strftime("%Y-%m-%d"),
+        date=night.date,
         coughs=last.event_count,
         coughsPrevAvg=prev_avg,
         sleepHours=sleep_hours,
         restfulness=restfulness,
         hourly=hourly,
         note=note,
+        sessionId=last.id,
+        sneezes=night.sneezes,
+        snoreMinutes=night.snoreMinutes,
+        clips=night.clips,
     )
 
 

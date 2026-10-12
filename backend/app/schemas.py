@@ -182,6 +182,54 @@ class NightSummary(BaseModel):
     restfulness: int                # 0–100
     hourly: list[HourlyPoint]
     note: str
+    # The night this summarises (None when the user has no nights yet), and what else
+    # was heard besides coughs.
+    sessionId: int | None = None
+    sneezes: int = 0
+    snoreMinutes: float = 0.0
+    clips: int = 0
+
+
+class NightListItem(BaseModel):
+    """One night in GET /api/sessions/nights."""
+    id: int
+    startedAt: datetime
+    endedAt: datetime | None
+    date: str                       # local date the night ended on ("2026-10-10")
+    timezone: str | None
+    # "app": uploaded by the phone's detector. "web": started from the web app, which
+    # has no microphone, so it carries no real detections.
+    source: Literal["app", "web"]
+    coughs: int                     # excluding events the user rejected
+    sneezes: int
+    snoreMinutes: float
+    clips: int                      # events with a stored audio clip
+
+
+class NightEvent(BaseModel):
+    id: int
+    type: str                       # cough | sneeze | snore
+    at: datetime
+    endedAt: datetime | None
+    durationMs: int | None
+    confidence: float | None        # peak model score, 0-1
+    loudnessDb: float | None        # loudest frame, dBFS
+    userLabel: str | None           # subject | other | not_an_event
+    counted: bool                   # False when the user rejected it
+    clipId: str | None              # play with GET /api/clips/{clipId}
+
+
+class NightSnoreEpisode(BaseModel):
+    startedAt: datetime
+    endedAt: datetime
+    snoreCount: int
+    meanIntensityDb: float | None
+
+
+class NightDetail(NightListItem):
+    """Response for GET /api/sessions/nights/{id}: everything heard that night."""
+    events: list[NightEvent]
+    snoreEpisodes: list[NightSnoreEpisode]
 
 
 class DailyPoint(BaseModel):
@@ -193,6 +241,8 @@ class DailyPoint(BaseModel):
     steps: int
     medsTaken: int
     medsPlanned: int
+    sneezes: int = 0
+    snoreMinutes: float = 0.0
 
 
 class ChangeCard(BaseModel):

@@ -24,7 +24,7 @@ export const Route = createFileRoute("/")({
 });
 
 const QUICK = [
-  { to: "/session", icon: Moon, label: "Start night session" },
+  { to: "/nights", icon: Moon, label: "Night sounds" },
   { to: "/trends", icon: Activity, label: "View trends" },
   { to: "/records", icon: Pill, label: "Add a record" },
 ] as const;
@@ -104,6 +104,18 @@ function HomePage() {
                 <HourlyBars data={summary.data.hourly} />
               </div>
               <p className="mt-3 text-sm text-muted-foreground">{summary.data.note}</p>
+              {summary.data.sessionId != null && (
+                <Link to="/nights" className="mt-3 flex items-center justify-between rounded-2xl bg-muted/60 px-4 py-3 text-sm">
+                  <span>
+                    <span className="font-medium">{summary.data.sneezes}</span> <span className="text-muted-foreground">sneezes</span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="font-medium">{summary.data.snoreMinutes}</span> <span className="text-muted-foreground">min snoring</span>
+                    <span className="mx-2 text-muted-foreground">·</span>
+                    <span className="font-medium">{summary.data.clips}</span> <span className="text-muted-foreground">clips</span>
+                  </span>
+                  <span className="text-primary">Listen →</span>
+                </Link>
+              )}
             </div>
           ) : null}
         </div>

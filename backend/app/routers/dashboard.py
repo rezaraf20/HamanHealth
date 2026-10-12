@@ -35,7 +35,7 @@ def web_dashboard(
         "SELECT local_date, metric, value_sum, value_avg FROM daily_health_summary "
         "WHERE user_id = :uid AND local_date BETWEEN :first AND :today "
         "AND metric IN ('cough.count', 'monitoring.duration', 'body.weight', 'activity.steps', "
-        "'sleep.duration', 'medication.taken', 'medication.planned')"
+        "'sleep.duration', 'medication.taken', 'medication.planned', 'sneeze.count', 'snore.duration')"
     ), {"uid": current_user.id, "first": first, "today": today}).mappings()
     by_day: dict[str, dict[str, float]] = {}
     for r in rows:
@@ -62,6 +62,8 @@ def web_dashboard(
             steps=int(d.get("activity.steps", 0)),
             medsTaken=int(d.get("medication.taken", 0)),
             medsPlanned=int(d.get("medication.planned", 0)),
+            sneezes=int(d.get("sneeze.count", 0)),
+            snoreMinutes=round(d.get("snore.duration", 0.0), 1),
         ))
 
     # Averages: each over the days that have a value, so days without an entry don't pull it down

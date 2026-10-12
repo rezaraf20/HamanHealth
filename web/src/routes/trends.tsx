@@ -25,6 +25,8 @@ type Metric = { key: keyof DailyPoint; label: string; unit: string; kind: "bar" 
 
 const METRICS: Metric[] = [
   { key: "coughs", label: "Coughs", unit: "per night", kind: "bar", color: "var(--primary)" },
+  { key: "sneezes", label: "Sneezes", unit: "per night", kind: "bar", color: "var(--chart-2)" },
+  { key: "snoreMinutes", label: "Snoring", unit: "minutes", kind: "area", color: "var(--chart-3)" },
   { key: "sleepHours", label: "Sleep", unit: "hours", kind: "area", color: "var(--primary)" },
   { key: "weight", label: "Weight", unit: "kg", kind: "line", color: "var(--chart-2)" },
   { key: "steps", label: "Activity", unit: "steps", kind: "area", color: "var(--chart-3)" },

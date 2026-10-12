@@ -12,6 +12,7 @@ const en = {
   nav_timeline: "Timeline",
   nav_records: "Records",
   nav_session: "Night session",
+  nav_nights: "Night sounds",
   nav_profile: "Profile",
   nav_account: "Account",
   good_morning: "Good morning",
@@ -50,7 +51,7 @@ const en = {
   support_title: "Haman support",
   support_hint: "I can help with using the app — sessions, records, settings and privacy.",
   support_placeholder: "Ask about the app…",
-  privacy_note: "We never record or upload audio. Only cough events (time and count) leave your device.",
+  privacy_note: "Detection runs on your phone. Only detected events and, if you allow it, a short clip of each cough or sneeze leave your device — never a continuous recording.",
   language: "Language",
   logout: "Log out",
 };
@@ -67,6 +68,7 @@ const nl: Record<MessageKey, string> = {
   nav_timeline: "Tijdlijn",
   nav_records: "Documenten",
   nav_session: "Nachtsessie",
+  nav_nights: "Nachtgeluiden",
   nav_profile: "Profiel",
   nav_account: "Account",
   good_morning: "Goedemorgen",
@@ -105,7 +107,7 @@ const nl: Record<MessageKey, string> = {
   support_title: "Haman-ondersteuning",
   support_hint: "Ik help je met de app — sessies, documenten, instellingen en privacy.",
   support_placeholder: "Vraag iets over de app…",
-  privacy_note: "We nemen nooit audio op en uploaden die ook niet. Alleen hoestmomenten (tijd en aantal) verlaten je apparaat.",
+  privacy_note: "De detectie draait op je telefoon. Alleen gedetecteerde momenten en, als je dat toestaat, een kort fragment van elke hoest of nies verlaten je apparaat — nooit een doorlopende opname.",
   language: "Taal",
   logout: "Uitloggen",
 };

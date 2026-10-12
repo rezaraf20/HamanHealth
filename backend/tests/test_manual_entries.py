@@ -80,6 +80,6 @@ def test_dashboard_can_end_on_the_users_local_date(client, user):
     log(client, user, tomorrow, {"body.weight": 79})
     assert dashboard(client, user, f"range=7&today={tomorrow}")["points"][-1] == {
         "date": str(tomorrow), "coughs": 0, "sleepHours": 0.0, "weight": 79.0, "steps": 0,
-        "medsTaken": 0, "medsPlanned": 0}
+        "medsTaken": 0, "medsPlanned": 0, "sneezes": 0, "snoreMinutes": 0.0}
     # A date far from the server's is ignored rather than trusted.
     assert dashboard(client, user, "range=7&today=2020-01-01")["points"][-1]["date"] == str(TODAY)

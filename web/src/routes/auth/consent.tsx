@@ -12,9 +12,9 @@ export const Route = createFileRoute("/auth/consent")({
   head: () => ({
     meta: [
       { title: "Your consent — Haman Health" },
-      { name: "description", content: "Choose what Haman Health may process. Audio is never stored or uploaded." },
+      { name: "description", content: "Choose what Haman Health may process, including whether short audio clips are kept." },
       { property: "og:title", content: "Your consent — Haman Health" },
-      { property: "og:description", content: "Choose what Haman Health may process. Audio is never stored or uploaded." },
+      { property: "og:description", content: "Choose what Haman Health may process, including whether short audio clips are kept." },
     ],
   }),
   component: ConsentPage,

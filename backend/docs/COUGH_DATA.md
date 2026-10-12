@@ -133,7 +133,8 @@ HMAC) and named by `anon_id`.
 | `GET /api/reports/daily?from=&to=&metric=` | daily values, coughs and readings together |
 | `GET /api/reports/timeline?from=&to=&kind=` | everything in time order |
 | `GET /api/dashboard` | same response; now from the daily view: coughs on the wake-up day, real weight/steps |
-| `GET /api/sessions/last/summary` | same response; hours on the user's clock, in night order |
+| `GET /api/sessions/last/summary` | same response plus `sessionId`, `sneezes`, `snoreMinutes`, `clips`; hours on the user's clock, in night order |
+| `GET /api/sessions/nights` · `/nights/{id}` | for the web app: recent nights with cough/sneeze/snoring/clip counts · one night's events (with `clipId`) and snore episodes |
 
 ---
 
@@ -184,13 +185,14 @@ After a model change: `alembic revision --autogenerate -m "…"`, review it, com
 
 ## 7. Open points
 
-- **Privacy texts**: onboarding, consent and session screens (EN + NL) say audio is never
-  recorded or uploaded. With clips on by default this is no longer true, and the
-  consent screen has no audio switch yet. This is postponed deliberately and needs
-  frontend work plus a GDPR check (cough audio tied to an account is health data).
-- **Android upload transport**: the Capacitor plugin (`CoughSessionPlugin`) isn't in the
-  repo yet. The phone side produces the sync JSON (`PlatformPayload.buildJson`) and
-  stores the clip path per event. The plugin has to send both with the user's token.
+- **Privacy texts**: the web app's consent, privacy and session screens (EN + NL) now say
+  that short clips are uploaded, and have an audio switch and a "delete my clips" button.
+  Still open: a GDPR check (cough audio tied to an account is health data).
+- **Android upload transport**: not built yet. The Android app has no network code, so
+  nothing reaches the platform. The full task is specified in
+  [`ANDROID_SYNC_TASK.md`](ANDROID_SYNC_TASK.md).
+- **Web night sessions**: the web app used to invent random coughs and store them as real
+  events. It no longer starts sessions; nights come only from the phone app.
 - The Notion backend page lists `/api/sessions/upload` and `/start`; the code has
   `/sync` and `POST /api/sessions`. (The records volume and `/api/auth/refresh` were
   fixed on `platform` in 23b565d and are merged into this branch.)

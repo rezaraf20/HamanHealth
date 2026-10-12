@@ -1,5 +1,5 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Activity, CalendarClock, FileText, Home, LayoutGrid, LogOut, Moon, User, type LucideIcon } from "lucide-react";
+import { Activity, AudioLines, CalendarClock, FileText, Home, LayoutGrid, LogOut, Moon, User, type LucideIcon } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 
 import { useAuth } from "@/lib/auth";
@@ -17,6 +17,7 @@ const NAV: NavItem[] = [
   { to: "/trends", icon: Activity, label: "nav_trends", mobile: true },
   { to: "/timeline", icon: CalendarClock, label: "nav_timeline", mobile: true },
   { to: "/records", icon: FileText, label: "nav_records" },
+  { to: "/nights", icon: AudioLines, label: "nav_nights" },
   { to: "/session", icon: Moon, label: "nav_session" },
   { to: "/account", icon: User, label: "nav_profile", mobile: true },
 ];

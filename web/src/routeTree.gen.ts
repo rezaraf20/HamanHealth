@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as NightsRouteImport } from './routes/nights'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as TrendsRouteImport } from './routes/trends'
@@ -45,6 +46,11 @@ const AccountRoute = AccountRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NightsRoute = NightsRouteImport.update({
+  id: '/nights',
+  path: '/nights',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingRoute = OnboardingRouteImport.update({
@@ -147,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRouteWithChildren
   '/dashboard': typeof DashboardRoute
+  '/nights': typeof NightsRoute
   '/onboarding': typeof OnboardingRoute
   '/timeline': typeof TimelineRoute
   '/trends': typeof TrendsRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/nights': typeof NightsRoute
   '/onboarding': typeof OnboardingRoute
   '/timeline': typeof TimelineRoute
   '/trends': typeof TrendsRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account': typeof AccountRouteWithChildren
   '/dashboard': typeof DashboardRoute
+  '/nights': typeof NightsRoute
   '/onboarding': typeof OnboardingRoute
   '/timeline': typeof TimelineRoute
   '/trends': typeof TrendsRoute
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/dashboard'
+    | '/nights'
     | '/onboarding'
     | '/timeline'
     | '/trends'
@@ -244,6 +254,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dashboard'
+    | '/nights'
     | '/onboarding'
     | '/timeline'
     | '/trends'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/dashboard'
+    | '/nights'
     | '/onboarding'
     | '/timeline'
     | '/trends'
@@ -293,6 +305,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRouteWithChildren
   DashboardRoute: typeof DashboardRoute
+  NightsRoute: typeof NightsRoute
   OnboardingRoute: typeof OnboardingRoute
   TimelineRoute: typeof TimelineRoute
   TrendsRoute: typeof TrendsRoute
@@ -328,6 +341,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nights': {
+      id: '/nights'
+      path: '/nights'
+      fullPath: '/nights'
+      preLoaderRoute: typeof NightsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -493,6 +513,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRouteWithChildren,
   DashboardRoute: DashboardRoute,
+  NightsRoute: NightsRoute,
   OnboardingRoute: OnboardingRoute,
   TimelineRoute: TimelineRoute,
   TrendsRoute: TrendsRoute,

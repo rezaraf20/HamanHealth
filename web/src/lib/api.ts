@@ -5,8 +5,8 @@
  * FastAPI backend at VITE_API_BASE_URL using JWT (access + refresh) auth.
  * While the backend is not available, USE_MOCKS returns local mock data.
  *
- * Privacy invariant: raw audio is never stored or uploaded. Only cough events
- * (timestamp, count, session_id) are sent.
+ * Privacy: the web app never touches the microphone. Detection runs in the phone app,
+ * which sends detected events and, if the user allows it, a short clip of each one.
  */
 import * as mocks from "./mocks";
 
@@ -34,6 +34,8 @@ export type ConsentState = {
   healthTrends: boolean;
   recordsProcessing: boolean;
   productAnalytics: boolean;
+  /** Upload a short clip of each detected cough or sneeze. On unless switched off. */
+  audioClips: boolean;
   acceptedAt: string | null;
 };
 
@@ -60,6 +62,45 @@ export type NightSummary = {
   restfulness: number; // 0..100
   hourly: { hour: string; coughs: number }[];
   note: string;
+  /** The night this summarises; null when there are no nights yet. */
+  sessionId: number | null;
+  sneezes: number;
+  snoreMinutes: number;
+  clips: number;
+};
+
+export type NightListItem = {
+  id: number;
+  startedAt: string;
+  endedAt: string | null;
+  /** Local date the night ended on. */
+  date: string;
+  timezone: string | null;
+  /** "web" nights were started in the browser, which cannot listen. */
+  source: "app" | "web";
+  coughs: number;
+  sneezes: number;
+  snoreMinutes: number;
+  clips: number;
+};
+
+export type NightEvent = {
+  id: number;
+  type: string;
+  at: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  confidence: number | null;
+  loudnessDb: number | null;
+  userLabel: string | null;
+  /** False when the user rejected the event on the phone. */
+  counted: boolean;
+  clipId: string | null;
+};
+
+export type NightDetail = NightListItem & {
+  events: NightEvent[];
+  snoreEpisodes: { startedAt: string; endedAt: string; snoreCount: number; meanIntensityDb: number | null }[];
 };
 
 export type Range = 7 | 30 | 90;
@@ -72,6 +113,8 @@ export type DailyPoint = {
   sleepHours: number;
   medsTaken: number;
   medsPlanned: number;
+  sneezes: number;
+  snoreMinutes: number;
 };
 
 export type ChangeCard = {
@@ -264,6 +307,15 @@ async function request<T>(path: string, init: RequestInit & { retry?: boolean } 
 
 const json = (body: unknown) => JSON.stringify(body);
 
+/** Like request(), for binary responses (audio clips need the login token too). */
+async function requestBlob(path: string, retry = true): Promise<Blob> {
+  const tokens = getTokens();
+  const res = await fetch(`${API_BASE_URL}${path}`, tokens ? { headers: { authorization: `Bearer ${tokens.access}` } } : {});
+  if (res.status === 401 && retry && (await refreshTokens())) return requestBlob(path, false);
+  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  return res.blob();
+}
+
 // ---------- API surface ----------
 
 export const api = {
@@ -309,6 +361,14 @@ export const api = {
     end: (id: string) =>
       USE_MOCKS ? mocks.endSession(id) : request<NightSession>(`/sessions/${id}/end`, { method: "POST" }),
     lastSummary: () => (USE_MOCKS ? mocks.lastSummary() : request<NightSummary>("/sessions/last/summary")),
+  },
+  nights: {
+    list: () => (USE_MOCKS ? mocks.nights() : request<NightListItem[]>("/sessions/nights")),
+    get: (id: number) => (USE_MOCKS ? mocks.night(id) : request<NightDetail>(`/sessions/nights/${id}`)),
+  },
+  clips: {
+    audio: (clipId: string) => (USE_MOCKS ? mocks.clipAudio() : requestBlob(`/clips/${encodeURIComponent(clipId)}`)),
+    removeAll: () => (USE_MOCKS ? mocks.ok() : request<void>("/clips", { method: "DELETE" })),
   },
   dashboard: {
     get: (range: Range) =>

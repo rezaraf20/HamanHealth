@@ -1,6 +1,6 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Mic, Moon, ShieldCheck } from "lucide-react";
+import { Mic, Moon, ShieldCheck, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -15,9 +15,9 @@ export const Route = createFileRoute("/session/")({
   head: () => ({
     meta: [
       { title: "Night session — Haman Health" },
-      { name: "description", content: "Set up tonight's cough tracking session. Detection runs on your device; no audio leaves it." },
+      { name: "description", content: "Night sessions run in the Haman Health app on your phone, where coughs, sneezes and snoring are detected." },
       { property: "og:title", content: "Night session — Haman Health" },
-      { property: "og:description", content: "Set up tonight's cough tracking session. Detection runs on your device; no audio leaves it." },
+      { property: "og:description", content: "Night sessions run in the Haman Health app on your phone, where coughs, sneezes and snoring are detected." },
     ],
   }),
   component: SessionSetupPage,
@@ -47,6 +47,7 @@ function SessionSetupPage() {
   const [to, setTo] = useState("07:00");
   const [busy, setBusy] = useState(false);
   const status = useQuery({ queryKey: ["cough-session", "status"], queryFn: () => coughSession.getStatus() });
+  const available = useQuery({ queryKey: ["cough-session", "available"], queryFn: () => coughSession.isAvailable() });
 
   async function start() {
     setBusy(true);
@@ -62,6 +63,32 @@ function SessionSetupPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (available.data === false) {
+    return (
+      <AppShell title={t("nav_session")}>
+        <PageHeader eyebrow="Tonight" title={t("session_setup")} />
+        <div className="space-y-4 px-5 md:px-8 md:max-w-2xl">
+          <section className="card-soft flex items-start gap-3 p-5">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary-soft text-primary">
+              <Smartphone className="size-5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">Night sessions run on your phone</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Coughs, sneezes and snoring are detected by the Haman Health app on your phone, which listens through the night. A browser cannot do
+                that, so there is nothing to start here. After a night with the app, the results appear on your home page and under Night sounds.
+              </p>
+              <Link to="/nights" className="mt-3 inline-block text-sm font-medium text-primary underline-offset-2 hover:underline">
+                Open Night sounds
+              </Link>
+            </div>
+          </section>
+        </div>
+        <Disclaimer />
+      </AppShell>
+    );
   }
 
   return (

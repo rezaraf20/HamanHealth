@@ -27,6 +27,7 @@ function PrivacyPage() {
   const { setUser } = useAuth();
   const [consent, setConsent] = useState<ConsentState | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [deletingClips, setDeletingClips] = useState(false);
   const [confirmText, setConfirmText] = useState("");
 
   useEffect(() => {
@@ -38,6 +39,18 @@ function PrivacyPage() {
     const next = await api.consent.update({ ...consent, [key]: v });
     setConsent(next);
     toast.success("Consent updated");
+  }
+
+  async function deleteClips() {
+    setDeletingClips(true);
+    try {
+      await api.clips.removeAll();
+      toast.success("Your audio clips have been deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete your clips");
+    } finally {
+      setDeletingClips(false);
+    }
   }
 
   async function exportData() {
@@ -67,6 +80,14 @@ function PrivacyPage() {
           </Row>
         ))}
         <p className="pb-4 text-xs text-muted-foreground">{t("privacy_note")}</p>
+      </div>
+
+      <div className="card-soft px-5">
+        <Row title="Delete my audio clips" hint="Removes every stored clip now. The cough, sneeze and snoring counts stay.">
+          <button onClick={() => void deleteClips()} disabled={deletingClips} className={btnOutline}>
+            {deletingClips ? "Deleting…" : "Delete clips"}
+          </button>
+        </Row>
       </div>
 
       <div className="card-soft px-5">

@@ -12,6 +12,8 @@ import type {
   Device,
   HealthRecord,
   Medication,
+  NightDetail,
+  NightListItem,
   NightSession,
   NightSummary,
   NotificationPrefs,
@@ -66,7 +68,7 @@ function loadConsent(): ConsentState {
     const raw = window.localStorage.getItem(CONSENT_KEY);
     if (raw) return JSON.parse(raw) as ConsentState;
   }
-  return { coughTracking: false, healthTrends: false, recordsProcessing: false, productAnalytics: false, acceptedAt: null };
+  return { coughTracking: false, healthTrends: false, recordsProcessing: false, productAnalytics: false, audioClips: true, acceptedAt: null };
 }
 let consent = loadConsent();
 
@@ -100,7 +102,7 @@ export async function register(name: string, email: string) {
     .slice(0, 2)
     .toUpperCase();
   user = { ...user, name, email, avatarInitials: initials || "HH", avatarUrl: null, twoFactorEnabled: false };
-  consent = { coughTracking: false, healthTrends: false, recordsProcessing: false, productAnalytics: false, acceptedAt: null };
+  consent = { coughTracking: false, healthTrends: false, recordsProcessing: false, productAnalytics: false, audioClips: true, acceptedAt: null };
   if (typeof window !== "undefined") window.localStorage.removeItem(CONSENT_KEY);
   const t = tokens();
   setTokens(t);
@@ -177,7 +179,67 @@ export async function lastSummary(): Promise<NightSummary> {
     restfulness: 78,
     hourly,
     note: "Most cough events clustered between 2:00 and 3:30. Your 7-night average is similar.",
+    sessionId: 1,
+    sneezes: 2,
+    snoreMinutes: 18,
+    clips: 0,
   };
+}
+
+// ---------- nights ----------
+
+function mockNight(id: number): NightDetail {
+  const start = daysAgo(id - 1);
+  start.setHours(23, 0, 0, 0);
+  const at = (minutes: number) => new Date(start.getTime() + minutes * 60_000).toISOString();
+  const rnd = seeded(id * 31);
+  const events = Array.from({ length: 6 + Math.round(rnd() * 6) }, (_, i) => {
+    const minute = 20 + i * 45 + Math.round(rnd() * 20);
+    return {
+      id: id * 100 + i,
+      type: i % 5 === 4 ? "sneeze" : "cough",
+      at: at(minute),
+      endedAt: at(minute + 0.02),
+      durationMs: 1440,
+      confidence: Number((0.6 + rnd() * 0.38).toFixed(2)),
+      loudnessDb: -20 - Math.round(rnd() * 15),
+      userLabel: null,
+      counted: true,
+      clipId: null,
+    };
+  });
+  const sneezes = events.filter((e) => e.type === "sneeze").length;
+  return {
+    id,
+    startedAt: at(0),
+    endedAt: at(480),
+    date: fmtDate(new Date(start.getTime() + 480 * 60_000)),
+    timezone: null,
+    source: "app",
+    coughs: events.length - sneezes,
+    sneezes,
+    snoreMinutes: 18,
+    clips: 0,
+    events,
+    snoreEpisodes: [{ startedAt: at(180), endedAt: at(198), snoreCount: 240, meanIntensityDb: -38 }],
+  };
+}
+
+export async function nights(): Promise<NightListItem[]> {
+  await wait();
+  return [1, 2, 3, 4, 5].map((id) => {
+    const { events: _events, snoreEpisodes: _episodes, ...item } = mockNight(id);
+    return item;
+  });
+}
+
+export async function night(id: number): Promise<NightDetail> {
+  await wait(200);
+  return mockNight(id);
+}
+
+export async function clipAudio(): Promise<Blob> {
+  throw new Error("No clips in demo mode");
 }
 
 // ---------- dashboard ----------
@@ -195,6 +257,8 @@ function buildPoints(range: Range): DailyPoint[] {
       sleepHours: Number((6.6 + rnd() * 1.6).toFixed(1)),
       medsTaken: rnd() > 0.15 ? 2 : 1,
       medsPlanned: 2,
+      sneezes: Math.round(rnd() * 3),
+      snoreMinutes: Math.round(10 + rnd() * 30),
     });
   }
   return points;

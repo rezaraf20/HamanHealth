@@ -4,8 +4,13 @@ export const CONSENT_ITEMS: { key: keyof Omit<ConsentState, "acceptedAt">; title
   {
     key: "coughTracking",
     title: "Night cough events",
-    body: "Detect coughs on your device during a session. Only the time and count are sent — never audio.",
+    body: "Detect coughs, sneezes and snoring on your phone during the night and send when each one happened.",
     required: true,
+  },
+  {
+    key: "audioClips",
+    title: "Short audio clips",
+    body: "Also send a 2.5-second clip of each detected cough or sneeze, so you can listen back. Clips are encrypted and deleted after 90 days. A whole night is never recorded.",
   },
   {
     key: "healthTrends",
