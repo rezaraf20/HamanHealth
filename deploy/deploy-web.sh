@@ -73,6 +73,34 @@ rsync -av --delete \
   "$BUILD_DIR/" "$PUBLIC_HTML/"
 chown -R "${DA_USER}:${DA_USER}" "$PUBLIC_HTML"
 
+# ── Strip SSR-prerendered content from index.html ────────────────────────────
+# TanStack Start / Nitro prerenders the app into index.html even when
+# prerender is nominally disabled. On a static Apache host React can't
+# hydrate this and throws error #418. We overwrite <body> with an empty
+# #root div so React mounts from a blank DOM — all <head> assets are kept.
+INDEX="$PUBLIC_HTML/index.html"
+if [ -f "$INDEX" ]; then
+  echo "Stripping SSR body content from index.html..."
+  python3 - "$INDEX" <<'PYEOF'
+import sys, re
+
+path = sys.argv[1]
+html = open(path).read()
+
+# Replace everything between <body ...> and </body> with an empty root div.
+# Keep <body> tag attributes (e.g. class) if any.
+html = re.sub(
+    r'(<body[^>]*>).*?(</body>)',
+    r'\1\n    <div id="root"></div>\n  \2',
+    html,
+    flags=re.DOTALL
+)
+
+open(path, 'w').write(html)
+print("Done — SSR body content removed.")
+PYEOF
+fi
+
 # Write .htaccess for SPA client-side routing fallback
 cat > "$PUBLIC_HTML/.htaccess" <<'HTACCESS'
 # SPA routing: serve index.html for all non-file requests
