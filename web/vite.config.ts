@@ -10,7 +10,7 @@ export default defineConfig({
   // Fully client-rendered SPA: no SSR, no server functions/routes. The build
   // emits a static client folder with index.html at its root (Capacitor-ready).
   tanstackStart: {
-    spa: { enabled: true, prerender: { outputPath: "/index.html" } },
+    spa: { enabled: true },
     prerender: { enabled: false },
   },
 });
