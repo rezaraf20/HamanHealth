@@ -1,0 +1,8 @@
+{
+  "appId": "com.haman.sleep",
+  "appName": "Haman Health",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}

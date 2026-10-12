@@ -13,7 +13,7 @@ services:
       - DATABASE_URL=postgresql://haman:${HAMAN_DB_PASS}@haman-db:5432/hamanhealth
       - SECRET_KEY=${HAMAN_SECRET_KEY}
       - ADMIN_SECRET=${ADMIN_SECRET}
-      - CORS_ORIGINS=["https://hamanhealth.com","https://app.hamanhealth.com","https://admin.hamanhealth.com","capacitor://localhost"]
+      - CORS_ORIGINS=["https://hamanhealth.com","https://app.hamanhealth.com","https://admin.hamanhealth.com","capacitor://localhost","https://localhost"]
       # Audio clips: on by default. The clips database (no user data) lives in the same
       # PostgreSQL container and is created on first start.
       - CLIPS_DATABASE_URL=postgresql://haman:${HAMAN_DB_PASS}@haman-db:5432/hamanclips

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:5173",
         "capacitor://localhost",
+        "https://localhost",   # the Android app's web view (Capacitor default origin)
         "http://localhost",
     ]
 

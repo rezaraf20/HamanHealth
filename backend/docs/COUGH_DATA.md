@@ -188,9 +188,11 @@ After a model change: `alembic revision --autogenerate -m "…"`, review it, com
 - **Privacy texts**: the web app's consent, privacy and session screens (EN + NL) now say
   that short clips are uploaded, and have an audio switch and a "delete my clips" button.
   Still open: a GDPR check (cough audio tied to an account is health data).
-- **Android upload transport**: not built yet. The Android app has no network code, so
-  nothing reaches the platform. The full task is specified in
-  [`ANDROID_SYNC_TASK.md`](ANDROID_SYNC_TASK.md).
+- **Android app**: the detector app has no network code yet, so nothing reaches the
+  platform. The plan is one app: this web app in a Capacitor WebView with the cough
+  module underneath as the `CoughSession` plugin, which also uploads nights and clips.
+  The web side is in place (`web/src/lib/cough-session.plugin.ts`); the native task is
+  specified in [`ANDROID_APP_TASK.md`](ANDROID_APP_TASK.md).
 - **Web night sessions**: the web app used to invent random coughs and store them as real
   events. It no longer starts sessions; nights come only from the phone app.
 - The Notion backend page lists `/api/sessions/upload` and `/start`; the code has

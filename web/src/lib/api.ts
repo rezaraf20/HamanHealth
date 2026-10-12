@@ -234,10 +234,20 @@ export function getTokens(): Tokens | null {
   }
 }
 
+const tokenListeners = new Set<(tokens: Tokens | null) => void>();
+
 export function setTokens(tokens: Tokens | null) {
   if (typeof window === "undefined") return;
   if (tokens) window.localStorage.setItem(TOKEN_KEY, JSON.stringify(tokens));
   else window.localStorage.removeItem(TOKEN_KEY);
+  tokenListeners.forEach((cb) => cb(tokens));
+}
+
+/** Calls back now with the current tokens and again on every sign-in, refresh and sign-out. */
+export function onTokensChanged(cb: (tokens: Tokens | null) => void): () => void {
+  tokenListeners.add(cb);
+  cb(getTokens());
+  return () => void tokenListeners.delete(cb);
 }
 
 // ---------- HTTP core ----------

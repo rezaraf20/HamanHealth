@@ -1,10 +1,10 @@
 /**
  * Cough session bridge — the ONLY interface night-session screens may use.
  *
- * Detection runs in the Haman Health phone app, not in the browser: the web app has no
- * microphone access, so here the bridge reports itself unavailable and night sessions
- * cannot be started. A native (Capacitor) implementation can be registered later
- * without touching any UI code. Demo mode (USE_MOCKS) keeps its simulated session.
+ * Inside the Android app (a Capacitor web view) the bridge talks to the native detector.
+ * In a plain browser there is no detector and no microphone access, so the bridge
+ * reports itself unavailable and night sessions cannot be started. Demo mode
+ * (USE_MOCKS) keeps its simulated session.
  */
 
 export type CoughEvent = {
@@ -48,16 +48,17 @@ export interface CoughSessionBridge {
   listSessions(from: string, to: string): Promise<SessionSummary[]>;
 }
 
+import { createCapacitorCoughSession } from "./cough-session.capacitor";
 import { createMockCoughSession } from "./cough-session.mock";
 import { USE_MOCKS } from "./api";
 
 type BridgeFactory = () => CoughSessionBridge;
 
 const nativeFactories: Record<string, BridgeFactory | undefined> = {
-  // e.g. capacitor: () => createCapacitorCoughSession(),
+  capacitor: () => createCapacitorCoughSession(),
 };
 
-function isNative(): boolean {
+export function isNative(): boolean {
   if (typeof window === "undefined") return false;
   const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
   return Boolean(cap?.isNativePlatform?.());

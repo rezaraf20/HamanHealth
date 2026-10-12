@@ -61,8 +61,10 @@ function ActiveSessionPage() {
 
   async function end() {
     const summary = await coughSession.stop();
-    await qc.invalidateQueries({ queryKey: ["cough-session"] });
-    await qc.invalidateQueries({ queryKey: ["session"] });
+    // The night has just been uploaded (or queued): refresh everything that shows it.
+    await Promise.all(
+      ["cough-session", "session", "summary", "nights", "dashboard"].map((key) => qc.invalidateQueries({ queryKey: [key] })),
+    );
     toast.success(`Session saved — ${summary.totalCoughs} cough events. Your morning summary is ready.`);
     navigate({ to: "/" });
   }
