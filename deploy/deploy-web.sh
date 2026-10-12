@@ -24,26 +24,39 @@ BUILD_DIR="${1:-/tmp/haman-web-build}"
 DA_USER="hamanhea"
 DA_DOMAIN="hamanhealth.com"
 APP_SUBDOMAIN="app.hamanhealth.com"
-# DirectAdmin stores the subdomain's public_html here:
 PUBLIC_HTML="/home/${DA_USER}/domains/${APP_SUBDOMAIN}/public_html"
-# DirectAdmin's real custom config file (NOT cust_httpd inside domains/):
-DA_CONF="/usr/local/directadmin/data/users/${DA_USER}/domains/${DA_DOMAIN}.cust_httpd"
 MARKER="# haman-app.hamanhealth.com — DO NOT REMOVE"
 
 echo "=== Haman Health — web deploy to ${APP_SUBDOMAIN} ==="
 
-# ── Validate build dir ────────────────────────────────────────────────────────
-# scp of a directory with a trailing slash lands the *contents* directly inside
-# the destination; without a trailing slash it creates a subdirectory.  Handle
-# both: if index.html is one level deeper (e.g. BUILD_DIR/public/index.html),
-# descend into that subdirectory automatically.
-if [ -f "$BUILD_DIR/public/index.html" ] && [ ! -f "$BUILD_DIR/index.html" ]; then
-  BUILD_DIR="$BUILD_DIR/public"
-  echo "Auto-detected build in $BUILD_DIR"
-fi
+# ── Find the actual build root (handle scp with/without trailing slash) ───────
+# scp -r dir/  → contents land directly in dest
+# scp -r dir   → a subdir is created inside dest
+#
+# After upload the layout can be:
+#   /tmp/haman-web-build/index.html          (trailing-slash scp, correct)
+#   /tmp/haman-web-build/public/index.html   (no trailing slash or nested)
+#
+# Walk down until we find index.html (max 2 levels).
+find_build_root() {
+  local dir="$1"
+  if [ -f "$dir/index.html" ]; then
+    echo "$dir"
+    return
+  fi
+  for sub in "$dir"/*/; do
+    if [ -f "${sub}index.html" ]; then
+      echo "${sub%/}"
+      return
+    fi
+  done
+  echo ""
+}
 
-if [ ! -f "$BUILD_DIR/index.html" ]; then
-  echo "ERROR: $BUILD_DIR/index.html not found."
+BUILD_ROOT=$(find_build_root "$BUILD_DIR")
+
+if [ -z "$BUILD_ROOT" ]; then
+  echo "ERROR: Could not find index.html inside $BUILD_DIR (checked 2 levels)."
   echo ""
   echo "Build the app on your dev machine first:"
   echo "  cd web"
@@ -56,51 +69,58 @@ if [ ! -f "$BUILD_DIR/index.html" ]; then
   exit 1
 fi
 
+echo "Build root: $BUILD_ROOT"
+echo "index.html entry JS: $(grep -o 'index-[A-Za-z0-9_-]*\.js' "$BUILD_ROOT/index.html" | head -1)"
+
 # ── Ensure subdomain public_html exists ───────────────────────────────────────
-# The subdomain must already exist in DirectAdmin (Subdomain Management).
 if [ ! -d "$PUBLIC_HTML" ]; then
   echo "ERROR: $PUBLIC_HTML does not exist."
-  echo "Create the subdomain app.hamanhealth.com in DirectAdmin first:"
-  echo "  DirectAdmin → Subdomain Management → Add: app"
+  echo "Create the subdomain app.hamanhealth.com in DirectAdmin first."
   exit 1
 fi
 
 # ── Sync static files ─────────────────────────────────────────────────────────
 echo "Syncing static files to $PUBLIC_HTML..."
-rsync -av --delete \
+rsync -a --delete \
   --exclude='.git' \
   --exclude='.env*' \
-  "$BUILD_DIR/" "$PUBLIC_HTML/"
+  "${BUILD_ROOT}/" "$PUBLIC_HTML/"
 chown -R "${DA_USER}:${DA_USER}" "$PUBLIC_HTML"
 
-# ── Strip SSR-prerendered content from index.html ────────────────────────────
-# TanStack Start / Nitro prerenders the app into index.html even when
-# prerender is nominally disabled. On a static Apache host React can't
-# hydrate this and throws error #418. We overwrite <body> with an empty
-# #root div so React mounts from a blank DOM — all <head> assets are kept.
+# ── Verify the right index.html landed ────────────────────────────────────────
+DEPLOYED_ENTRY=$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PUBLIC_HTML/index.html" | head -1)
+echo "Deployed index.html entry JS: $DEPLOYED_ENTRY"
+
+# ── Build clean SPA shell from deployed index.html ───────────────────────────
+# TanStack Start prerenders the app and uses <Scripts /> which only works with
+# a running Node server. On static Apache, React never boots. Fix: extract the
+# entry JS from modulepreload links and inject it explicitly into <body>.
 INDEX="$PUBLIC_HTML/index.html"
-if [ -f "$INDEX" ]; then
-  echo "Rebuilding index.html as clean SPA shell..."
-  python3 - "$INDEX" <<'PYEOF'
+python3 - "$INDEX" <<'PYEOF'
 import sys, re
 
 path = sys.argv[1]
 html = open(path).read()
 
-# TanStack Start uses <Scripts /> which only works with a running Node server.
-# On static Apache nothing gets injected so React never boots.
-# Fix: find the entry JS from modulepreload links and inject it into <body>.
-
-# Find the main entry JS (index-*.js) from modulepreload
+# Find entry JS from modulepreload (index-HASH.js pattern)
 entry_href = None
-for tag in re.findall(r'<link[^>]+rel=["\']modulepreload["\'][^>]*/?\s*>', html):
-    m = re.search(r'href=["\']([^"\']*index-[^"\']+\.js)["\']', tag)
+for tag in re.findall(r'<link[^>]+modulepreload[^>]*>', html):
+    m = re.search(r'href=["\']([^"\']*?/index-[^"\']+\.js)["\']', tag)
     if m:
         entry_href = m.group(1)
         break
 
-# Strip body content and inject entry script
-script_tag = '<script type="module" src="' + entry_href + '"></script>' if entry_href else ''
+if not entry_href:
+    # fallback: any modulepreload JS that looks like the main bundle
+    for tag in re.findall(r'<link[^>]+modulepreload[^>]*>', html):
+        m = re.search(r'href=["\']([^"\']+\.js)["\']', tag)
+        if m:
+            entry_href = m.group(1)
+            break
+
+script_tag = ('<script type="module" src="' + entry_href + '"></script>') if entry_href else '<!-- ERROR: no entry script found -->'
+
+# Replace body content with empty root + entry script
 html = re.sub(
     r'(<body[^>]*>).*?(</body>)',
     r'\1\n    <div id="root"></div>\n    ' + script_tag + r'\n  \2',
@@ -109,11 +129,10 @@ html = re.sub(
 )
 
 open(path, 'w').write(html)
-print("Done — SPA shell written. Entry: " + (entry_href or "NOT FOUND"))
+print("SPA shell written. Entry: " + (entry_href or "NOT FOUND — check index.html"))
 PYEOF
-fi
 
-# Write .htaccess for SPA client-side routing fallback
+# ── Write .htaccess for SPA routing ──────────────────────────────────────────
 cat > "$PUBLIC_HTML/.htaccess" <<'HTACCESS'
 # SPA routing: serve index.html for all non-file requests
 <IfModule mod_rewrite.c>
@@ -139,19 +158,18 @@ HTACCESS
 
 echo "Static files deployed and .htaccess written."
 
+# ── Print final index.html body for verification ─────────────────────────────
+echo "--- index.html body ---"
+grep -A3 '<body' "$PUBLIC_HTML/index.html" | head -6
+echo "-----------------------"
+
 # ── Add vhost block to DirectAdmin custom config ──────────────────────────────
-# DirectAdmin injects .cust_httpd content inside the existing vhost — so we
-# write ONLY directives (no <VirtualHost> wrappers here). However for a
-# subdomain we need its own vhost; DirectAdmin handles this via a separate
-# subdomain .cust_httpd file.
 SUB_CONF="/usr/local/directadmin/data/users/${DA_USER}/domains/${APP_SUBDOMAIN}.cust_httpd"
 
 if grep -qF "$MARKER" "$SUB_CONF" 2>/dev/null; then
   echo "Vhost config already present in $SUB_CONF — skipping."
 else
   echo "Writing vhost config to $SUB_CONF..."
-  # For subdomains DirectAdmin accepts directives injected into its managed vhost.
-  # The wildcard cert *.hamanhealth.com covers app.hamanhealth.com.
   cat > "$SUB_CONF" <<CONF
 ${MARKER}
 # Allow .htaccess overrides for SPA routing
