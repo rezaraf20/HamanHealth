@@ -5,7 +5,13 @@ import "./styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
+import { connectNativeLayer } from "./lib/cough-session";
 import { getRouter } from "./router";
+
+// Android app only (no-op in a browser). Tried again on load in case the native bridge
+// was injected after this script started.
+connectNativeLayer();
+window.addEventListener("load", connectNativeLayer);
 
 const router = getRouter();
 

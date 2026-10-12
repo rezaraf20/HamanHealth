@@ -6,8 +6,15 @@
  * owns the microphone, the on-device detector and the background upload to the platform.
  * The web side owns the screens and the login.
  *
- * Any change here is a change to both sides. The native task is specified in
- * backend/docs/ANDROID_APP_TASK.md.
+ * The app loads this web app live from https://app.hamanhealth.com, so the web side can
+ * be newer than the installed APK. Two rules follow:
+ *   1. Changes to this contract are additive only: never remove or rename a method,
+ *      argument, field or event, and never change what an existing one means.
+ *   2. Anything added after version 1 must be guarded on the web side with
+ *      getInfo().contractVersion, because older APKs do not have it.
+ * Bump CONTRACT_VERSION here and in the native plugin together.
+ *
+ * The native task is specified in backend/docs/ANDROID_APP_TASK.md.
  */
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
@@ -53,7 +60,20 @@ export type NativeSyncStatus = {
   lastError?: string;
 };
 
+/** The contract version this web app was written against. */
+export const CONTRACT_VERSION = 1;
+
+export type NativeInfo = {
+  /** The contract version the installed APK implements. */
+  contractVersion: number;
+  /** versionName of the installed APK, e.g. "0.3.0". */
+  appVersion: string;
+};
+
 export interface CoughSessionPlugin {
+  /** Which contract version and app build is installed. Must exist in every version. */
+  getInfo(): Promise<NativeInfo>;
+
   /** True when the detector can run on this device (model loaded, microphone present). */
   isAvailable(): Promise<{ available: boolean }>;
 

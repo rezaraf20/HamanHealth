@@ -87,5 +87,33 @@ function createUnavailableCoughSession(): CoughSessionBridge {
   };
 }
 
-/** Single shared instance chosen by the factory. */
-export const coughSession: CoughSessionBridge = createCoughSession();
+let chosen: CoughSessionBridge | null = null;
+
+function bridge(): CoughSessionBridge {
+  if (chosen) return chosen;
+  const b = createCoughSession();
+  // Inside the Android app the native bridge can appear a moment after this module
+  // loads. Until it has, keep checking rather than settling on "unavailable".
+  if (USE_MOCKS || isNative()) chosen = b;
+  return b;
+}
+
+/** Single shared instance; the implementation is picked on first use. */
+export const coughSession: CoughSessionBridge = {
+  isAvailable: () => bridge().isAvailable(),
+  requestPermissions: () => bridge().requestPermissions(),
+  start: (opts) => bridge().start(opts),
+  stop: () => bridge().stop(),
+  getStatus: () => bridge().getStatus(),
+  onCoughEvent: (cb) => bridge().onCoughEvent(cb),
+  listSessions: (from, to) => bridge().listSessions(from, to),
+};
+
+/**
+ * Call at app start. Inside the Android app this connects the native layer right away,
+ * so it gets the login and can upload even if the user never opens the session screen.
+ * In a browser it does nothing.
+ */
+export function connectNativeLayer(): void {
+  if (isNative()) bridge();
+}

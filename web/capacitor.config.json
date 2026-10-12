@@ -1,7 +1,13 @@
 {
   "appId": "com.haman.sleep",
   "appName": "Haman Health",
-  "webDir": "dist",
+  "webDir": "native-shell",
+  "appendUserAgent": "HamanHealthAndroid",
+  "server": {
+    "url": "https://app.hamanhealth.com",
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
   "android": {
     "allowMixedContent": false
   }
