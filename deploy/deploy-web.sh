@@ -87,52 +87,29 @@ import sys, re
 path = sys.argv[1]
 html = open(path).read()
 
-# TanStack Start / Nitro uses <Scripts /> which only injects <script> tags
-# when a Node server is running. On static Apache nothing gets injected, so
-# React never boots. Fix: move all modulepreload + module script tags from
-# <head> into <body> so the browser can actually run them.
+# TanStack Start uses <Scripts /> which only works with a running Node server.
+# On static Apache nothing gets injected so React never boots.
+# Fix: find the entry JS from modulepreload links and inject it into <body>.
 
-# 1. Extract all modulepreload link tags
-modulepreloads = re.findall(r'<link[^>]+rel=["\']modulepreload["\'][^>]*/?\s*>', html, re.DOTALL)
-
-# 2. Extract the entry module script (type="module") if present
-entry_scripts = re.findall(r'<script[^>]+type=["\']module["\'][^>]*>.*?</script>', html, re.DOTALL)
-
-# 3. Build script tags from modulepreload hrefs as a fallback
 # Find the main entry JS (index-*.js) from modulepreload
 entry_href = None
-for tag in modulepreloads:
+for tag in re.findall(r'<link[^>]+rel=["\']modulepreload["\'][^>]*/?\s*>', html):
     m = re.search(r'href=["\']([^"\']*index-[^"\']+\.js)["\']', tag)
     if m:
         entry_href = m.group(1)
         break
 
-# 4. Strip body content, keep <body> tag
+# Strip body content and inject entry script
+script_tag = '<script type="module" src="' + entry_href + '"></script>' if entry_href else ''
 html = re.sub(
     r'(<body[^>]*>).*?(</body>)',
-    r'\1BODY_PLACEHOLDER\2',
+    r'\1\n    <div id="root"></div>\n    ' + script_tag + r'\n  \2',
     html,
     flags=re.DOTALL
 )
 
-# 5. Build body content
-if entry_scripts:
-    body_content = '\n    <div id="root"></div>\n    ' + '\n    '.join(entry_scripts) + '\n  '
-elif entry_href:
-    body_content = f'\n    <div id="root"></div>\n    <script type="module" src="{entry_href}"></script>\n  '
-else:
-    # Last resort: inject all modulepreload scripts
-    script_tags = '\n    '.join(
-        f'<script type="module" src="{re.search(r\'href=["\\\'](.*?)["\\\']\', t).group(1)}"></script>'
-        for t in modulepreloads
-        if re.search(r'href=["\\\'].*?["\\\']', t)
-    )
-    body_content = f'\n    <div id="root"></div>\n    {script_tags}\n  '
-
-html = html.replace('BODY_PLACEHOLDER', body_content)
-
 open(path, 'w').write(html)
-print(f"Done — SPA shell written. Entry: {entry_href or 'from script tags'}")
+print("Done — SPA shell written. Entry: " + (entry_href or "NOT FOUND"))
 PYEOF
 fi
 
