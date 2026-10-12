@@ -4,7 +4,8 @@ import { Activity, Bell, Footprints, Moon, Pill, Scale, Wind } from "lucide-reac
 
 import { AppShell } from "@/components/app-shell";
 import { HourlyBars } from "@/components/charts";
-import { ChangeNoticedCard, Disclaimer, SectionTitle, Skeleton, StatCard } from "@/components/haman-ui";
+import { ChangeNoticedCard, Disclaimer, SectionTitle, Skeleton } from "@/components/haman-ui";
+import { LogStatCard } from "@/components/log-metric";
 import { UserAvatar } from "@/components/user-avatar";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -129,10 +130,10 @@ function HomePage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <StatCard label={t("sleep")} value={dash.data.averages.sleepHours} unit="h / night" icon={Moon} />
-            <StatCard label={t("weight")} value={dash.data.averages.weight} unit="kg" icon={Scale} />
-            <StatCard label={t("activity")} value={dash.data.averages.steps.toLocaleString()} unit={t("steps")} icon={Footprints} />
-            <StatCard label={t("medications")} value={`${Math.round(dash.data.averages.adherence * 100)}%`} unit="taken" icon={Pill} />
+            <LogStatCard kind="sleep" label={t("sleep")} value={dash.data.averages.sleepHours} unit="h / night" icon={Moon} />
+            <LogStatCard kind="weight" label={t("weight")} value={dash.data.averages.weight} unit="kg" icon={Scale} />
+            <LogStatCard kind="activity" label={t("activity")} value={dash.data.averages.steps.toLocaleString()} unit={t("steps")} icon={Footprints} />
+            <LogStatCard kind="medications" label={t("medications")} value={`${Math.round(dash.data.averages.adherence * 100)}%`} unit="taken" icon={Pill} />
           </div>
         )}
       </div>

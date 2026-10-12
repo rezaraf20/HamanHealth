@@ -42,6 +42,8 @@ class ReadingValue(BaseModel):
             raise ValueError(f"unknown reading metric {self.metric!r}; see app/metrics.py")
         if not math.isfinite(self.value):
             raise ValueError("value must be a finite number")
+        if self.value < 0:
+            raise ValueError(f"{self.metric} cannot be negative")
         expected = METRICS[self.metric].unit
         if self.unit is not None and self.unit != expected:
             raise ValueError(f"{self.metric} is stored in {expected!r}, got {self.unit!r}")

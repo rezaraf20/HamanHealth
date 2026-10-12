@@ -12,7 +12,8 @@ export const Route = createFileRoute("/account")({
 });
 
 const ACCOUNT_SECTIONS: { to: string; label: string; hint: string; icon: LucideIcon }[] = [
-  { to: "/account", label: "Profile", hint: "Name and email", icon: UserRound },
+  // On mobile /account shows only this menu, so the profile form needs a path of its own.
+  { to: "/account/profile", label: "Profile", hint: "Name, photo and email", icon: UserRound },
   { to: "/account/security", label: "Security", hint: "Password, 2FA, sessions", icon: Lock },
   { to: "/account/privacy", label: "Privacy", hint: "Consent, export, delete", icon: Shield },
   { to: "/account/notifications", label: "Notifications", hint: "Reminders and summaries", icon: Bell },
@@ -33,7 +34,7 @@ function AccountLayout() {
         <div className="md:grid md:grid-cols-[260px_minmax(0,1fr)] md:gap-6">
           <nav className={cn("space-y-1", !isIndex && "hidden md:block")}>
             {ACCOUNT_SECTIONS.map((s) => {
-              const active = s.to === "/account" ? isIndex : pathname.startsWith(s.to);
+              const active = pathname.startsWith(s.to) || (s.to === "/account/profile" && isIndex);
               return (
                 <Link
                   key={s.to}

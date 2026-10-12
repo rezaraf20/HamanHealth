@@ -15,7 +15,9 @@ import type {
   NightSession,
   NightSummary,
   NotificationPrefs,
+  Observation,
   Range,
+  ReadingInput,
   RecordDetail,
   RecordType,
   SupportMessage,
@@ -466,4 +468,35 @@ export async function supportChat(messages: SupportMessage[]) {
     reply:
       "I can help with sessions, the dashboard and trends, records, notifications, security and privacy settings. What would you like to do in the app?",
   };
+}
+
+// ---------- observations (numbers the user enters by hand) ----------
+
+let observationRows: Observation[] = [];
+
+export async function addObservation(reading: ReadingInput) {
+  await wait();
+  observationRows = observationRows.filter((o) => o.reading_id !== reading.reading_id);
+  const added = reading.values.map((v, i) => ({
+    id: Date.now() + i,
+    reading_id: reading.reading_id,
+    metric: v.metric,
+    value: v.value,
+    unit: "",
+    measured_at: reading.measured_at,
+    local_date: reading.reading_id.slice(-10),
+    source: "manual",
+  }));
+  observationRows.push(...added);
+  return added;
+}
+
+export async function observations(metrics: string[]) {
+  await wait(150);
+  return observationRows.filter((o) => metrics.includes(o.metric));
+}
+
+export async function removeObservation(readingId: string) {
+  await wait();
+  observationRows = observationRows.filter((o) => o.reading_id !== readingId);
 }

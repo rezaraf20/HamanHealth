@@ -20,6 +20,7 @@ import { Route as AccountDevicesRouteImport } from './routes/account/devices'
 import { Route as AccountLanguageRouteImport } from './routes/account/language'
 import { Route as AccountNotificationsRouteImport } from './routes/account/notifications'
 import { Route as AccountPrivacyRouteImport } from './routes/account/privacy'
+import { Route as AccountProfileRouteImport } from './routes/account/profile'
 import { Route as AccountSecurityRouteImport } from './routes/account/security'
 import { Route as AuthConsentRouteImport } from './routes/auth/consent'
 import { Route as AuthForgotRouteImport } from './routes/auth/forgot'
@@ -86,6 +87,11 @@ const AccountPrivacyRoute = AccountPrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => AccountRoute,
 } as any)
+const AccountProfileRoute = AccountProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AccountRoute,
+} as any)
 const AccountSecurityRoute = AccountSecurityRouteImport.update({
   id: '/security',
   path: '/security',
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/account/language': typeof AccountLanguageRoute
   '/account/notifications': typeof AccountNotificationsRoute
   '/account/privacy': typeof AccountPrivacyRoute
+  '/account/profile': typeof AccountProfileRoute
   '/account/security': typeof AccountSecurityRoute
   '/auth/consent': typeof AuthConsentRoute
   '/auth/forgot': typeof AuthForgotRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/account/language': typeof AccountLanguageRoute
   '/account/notifications': typeof AccountNotificationsRoute
   '/account/privacy': typeof AccountPrivacyRoute
+  '/account/profile': typeof AccountProfileRoute
   '/account/security': typeof AccountSecurityRoute
   '/auth/consent': typeof AuthConsentRoute
   '/auth/forgot': typeof AuthForgotRoute
@@ -194,6 +202,7 @@ export interface FileRoutesById {
   '/account/language': typeof AccountLanguageRoute
   '/account/notifications': typeof AccountNotificationsRoute
   '/account/privacy': typeof AccountPrivacyRoute
+  '/account/profile': typeof AccountProfileRoute
   '/account/security': typeof AccountSecurityRoute
   '/auth/consent': typeof AuthConsentRoute
   '/auth/forgot': typeof AuthForgotRoute
@@ -219,6 +228,7 @@ export interface FileRouteTypes {
     | '/account/language'
     | '/account/notifications'
     | '/account/privacy'
+    | '/account/profile'
     | '/account/security'
     | '/auth/consent'
     | '/auth/forgot'
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/account/language'
     | '/account/notifications'
     | '/account/privacy'
+    | '/account/profile'
     | '/account/security'
     | '/auth/consent'
     | '/auth/forgot'
@@ -264,6 +275,7 @@ export interface FileRouteTypes {
     | '/account/language'
     | '/account/notifications'
     | '/account/privacy'
+    | '/account/profile'
     | '/account/security'
     | '/auth/consent'
     | '/auth/forgot'
@@ -374,6 +386,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountPrivacyRouteImport
       parentRoute: typeof AccountRoute
     }
+    '/account/profile': {
+      id: '/account/profile'
+      path: '/profile'
+      fullPath: '/account/profile'
+      preLoaderRoute: typeof AccountProfileRouteImport
+      parentRoute: typeof AccountRoute
+    }
     '/account/security': {
       id: '/account/security'
       path: '/security'
@@ -452,6 +471,7 @@ interface AccountRouteChildren {
   AccountLanguageRoute: typeof AccountLanguageRoute
   AccountNotificationsRoute: typeof AccountNotificationsRoute
   AccountPrivacyRoute: typeof AccountPrivacyRoute
+  AccountProfileRoute: typeof AccountProfileRoute
   AccountSecurityRoute: typeof AccountSecurityRoute
   AccountIndexRoute: typeof AccountIndexRoute
 }
@@ -461,6 +481,7 @@ const AccountRouteChildren: AccountRouteChildren = {
   AccountLanguageRoute: AccountLanguageRoute,
   AccountNotificationsRoute: AccountNotificationsRoute,
   AccountPrivacyRoute: AccountPrivacyRoute,
+  AccountProfileRoute: AccountProfileRoute,
   AccountSecurityRoute: AccountSecurityRoute,
   AccountIndexRoute: AccountIndexRoute,
 }

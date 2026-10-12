@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { CoughBars, MetricArea, MetricLine } from "@/components/charts";
 import { ChangeNoticedCard, Disclaimer, PageHeader, RangeTabs, SectionTitle, Skeleton, StatCard } from "@/components/haman-ui";
+import { LogStatCard } from "@/components/log-metric";
 import { api, type Range } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -39,10 +40,10 @@ function DashboardPage() {
         <div className="space-y-6 px-5 md:px-8">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatCard label={t("cough_events")} value={data.averages.coughs} unit="/ night" icon={Wind} />
-            <StatCard label={t("sleep")} value={data.averages.sleepHours} unit="h" icon={Moon} />
-            <StatCard label={t("weight")} value={data.averages.weight} unit="kg" icon={Scale} />
-            <StatCard label={t("activity")} value={data.averages.steps.toLocaleString()} unit={t("steps")} icon={Footprints} />
-            <StatCard label={t("medications")} value={`${Math.round(data.averages.adherence * 100)}%`} unit="taken" icon={Pill} className="col-span-2 lg:col-span-1" />
+            <LogStatCard kind="sleep" label={t("sleep")} value={data.averages.sleepHours} unit="h" icon={Moon} />
+            <LogStatCard kind="weight" label={t("weight")} value={data.averages.weight} unit="kg" icon={Scale} />
+            <LogStatCard kind="activity" label={t("activity")} value={data.averages.steps.toLocaleString()} unit={t("steps")} icon={Footprints} />
+            <LogStatCard kind="medications" label={t("medications")} value={`${Math.round(data.averages.adherence * 100)}%`} unit="taken" icon={Pill} className="col-span-2 lg:col-span-1" />
           </div>
 
           <section className="card-soft p-5">

@@ -44,6 +44,11 @@ _METRICS = [
     Metric("body.temperature", "Cel", "Body temperature", "reading", "max", loinc="8310-5"),
     Metric("spo2", "%", "Oxygen saturation", "reading", "avg", loinc="59408-5"),
     Metric("activity.steps", "{steps}", "Steps", "reading", "sum", loinc="55423-8"),
+    # Entered by the user until a device reports them. Sleep here is what the user says
+    # they slept; monitoring.duration is how long the microphone listened.
+    Metric("sleep.duration", "h", "Hours slept, as reported by the user", "reading", "sum", loinc="93832-4"),
+    Metric("medication.taken", "{count}", "Medication doses taken", "reading", "sum"),
+    Metric("medication.planned", "{count}", "Medication doses planned for the day", "reading", "sum"),
 ]
 
 METRICS: dict[str, Metric] = {m.code: m for m in _METRICS}

@@ -146,6 +146,32 @@ export type NotificationPrefs = {
   productUpdates: boolean;
 };
 
+/** One stored value of a reading the user entered (see components/log-metric.tsx). */
+export type Observation = {
+  id: number;
+  reading_id: string | null;
+  metric: string;
+  value: number;
+  unit: string;
+  measured_at: string;
+  local_date: string;
+  source: string;
+};
+
+export type ReadingInput = {
+  /** Sending the same id again replaces the earlier reading. */
+  reading_id: string;
+  measured_at: string;
+  timezone?: string;
+  values: { metric: string; value: number }[];
+};
+
+/** The user's calendar date (YYYY-MM-DD), which can differ from the server's UTC date. */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export type Device = { id: string; name: string; kind: string; status: "connected" | "available" };
 
 export type SupportMessage = { role: "user" | "assistant"; content: string };
@@ -285,7 +311,22 @@ export const api = {
     lastSummary: () => (USE_MOCKS ? mocks.lastSummary() : request<NightSummary>("/sessions/last/summary")),
   },
   dashboard: {
-    get: (range: Range) => (USE_MOCKS ? mocks.dashboard(range) : request<DashboardData>(`/dashboard?range=${range}`)),
+    get: (range: Range) =>
+      USE_MOCKS ? mocks.dashboard(range) : request<DashboardData>(`/dashboard?range=${range}&today=${localToday()}`),
+  },
+  observations: {
+    add: (reading: ReadingInput) =>
+      USE_MOCKS
+        ? mocks.addObservation(reading)
+        : request<Observation[]>("/observations", { method: "POST", body: json({ readings: [reading] }) }),
+    list: (metrics: string[]) =>
+      USE_MOCKS
+        ? mocks.observations(metrics)
+        : request<Observation[]>(`/observations?${metrics.map((m) => `metric=${encodeURIComponent(m)}`).join("&")}`),
+    remove: (readingId: string) =>
+      USE_MOCKS
+        ? mocks.removeObservation(readingId)
+        : request<void>(`/observations/${encodeURIComponent(readingId)}`, { method: "DELETE" }),
   },
   timeline: {
     list: (kinds?: TimelineKind[]) =>
