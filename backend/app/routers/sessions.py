@@ -1,13 +1,16 @@
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, cast, Date, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..auth import CurrentUser
 from ..database import get_db
 from ..models import CoughSession, CoughEvent
+from ..services.cough_ingest import counts_for_user, upsert_session
 from ..schemas import (
     SessionUploadRequest, SessionOut,
     DashboardSummary, DailyCount,
@@ -131,6 +134,7 @@ def end_session(session_id: int, current_user: CurrentUser = ..., db: Session = 
         raise HTTPException(status_code=404, detail="Session not found")
     s.is_active = False
     s.ended_at = datetime.now(timezone.utc)
+    s.status = "complete"
     db.commit()
     db.refresh(s)
     return NightSessionOut.from_orm(s)
@@ -142,40 +146,17 @@ def end_session(session_id: int, current_user: CurrentUser = ..., db: Session = 
 def sync_session(body: SessionUploadRequest, current_user: CurrentUser, db: Session = Depends(get_db)):
     """
     Called by the app (or background sync) when a session ends.
-    Idempotent: if the device_session_id already exists for this user, skip duplicate.
+    Idempotent: re-sending the same device_session_id merges into the stored night —
+    events are matched on device_event_id, new ones added, user labels updated.
     """
-    existing = (
-        db.query(CoughSession)
-        .filter(
-            CoughSession.user_id == current_user.id,
-            CoughSession.device_session_id == body.device_session_id,
-        )
-        .first()
-    )
-    if existing:
-        return existing
-
-    session = CoughSession(
-        user_id=current_user.id,
-        device_session_id=body.device_session_id,
-        started_at=body.started_at,
-        ended_at=body.ended_at,
-        sensitivity=body.sensitivity,
-        event_count=len(body.events),
-        note=body.note,
-    )
-    db.add(session)
-    db.flush()  # get session.id
-
-    for ev in body.events:
-        db.add(CoughEvent(
-            session_id=session.id,
-            timestamp=ev.timestamp,
-            confidence=ev.confidence,
-            clip_anon_id=ev.clip_anon_id,
-        ))
-
-    db.commit()
+    try:
+        session = upsert_session(db, current_user, body)
+        db.commit()
+    except IntegrityError:
+        # Two uploads of the same new night raced; the other one created it. Merge into it.
+        db.rollback()
+        session = upsert_session(db, current_user, body)
+        db.commit()
     db.refresh(session)
     return session
 
@@ -222,6 +203,7 @@ def dashboard(current_user: CurrentUser, db: Session = Depends(get_db)):
         .filter(
             CoughSession.user_id == current_user.id,
             CoughEvent.timestamp >= seven_days_ago,
+            counts_for_user("cough"),
         )
         .group_by("day")
         .order_by("day")
@@ -272,15 +254,17 @@ def last_summary(current_user: CurrentUser, db: Session = Depends(get_db)):
     # Build hourly breakdown from real events
     events = (
         db.query(CoughEvent)
-        .filter(CoughEvent.session_id == last.id)
+        .filter(CoughEvent.session_id == last.id, counts_for_user("cough"))
         .order_by(CoughEvent.timestamp)
         .all()
     )
+    # Hours on the user's clock, in the order they happened (23:00 before 01:00).
+    tz = ZoneInfo(last.timezone) if last.timezone else timezone.utc
     hourly_map: dict[str, int] = {}
     for ev in events:
-        h = ev.timestamp.strftime("%H:00")
+        h = ev.timestamp.astimezone(tz).strftime("%H:00")
         hourly_map[h] = hourly_map.get(h, 0) + 1
-    hourly = [HourlyPoint(hour=h, coughs=c) for h, c in sorted(hourly_map.items())]
+    hourly = [HourlyPoint(hour=h, coughs=c) for h, c in hourly_map.items()]
 
     # 7-session rolling average for coughs
     recent = (
@@ -306,7 +290,8 @@ def last_summary(current_user: CurrentUser, db: Session = Depends(get_db)):
     note = "Most cough events clustered in the early hours." if last.event_count > 0 else "No cough events recorded this session."
 
     return NightSummary(
-        date=last.started_at.strftime("%Y-%m-%d"),
+        # The morning the night ended, as on the dashboard.
+        date=(last.ended_at or last.started_at).astimezone(tz).strftime("%Y-%m-%d"),
         coughs=last.event_count,
         coughsPrevAvg=prev_avg,
         sleepHours=sleep_hours,
@@ -341,6 +326,7 @@ def dashboard_summary(current_user: CurrentUser, db: Session = Depends(get_db)):
         .filter(
             CoughSession.user_id == current_user.id,
             CoughEvent.timestamp >= seven_days_ago,
+            counts_for_user("cough"),
         )
         .group_by("day")
         .order_by("day")
