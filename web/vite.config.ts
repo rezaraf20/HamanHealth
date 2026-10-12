@@ -1,19 +1,31 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+// Plain Vite SPA config — bypasses @tanstack/react-start and all SSR machinery.
+// Builds a fully static client bundle suitable for Apache/static hosting.
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
+import tsconfigPaths from "vite-tsconfig-paths";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  // Fully client-rendered SPA: no SSR, no server functions/routes. The build
-  // emits a static client folder with index.html at its root (Capacitor-ready).
-  tanstackStart: {
-    spa: { enabled: true },
-    prerender: { enabled: false },
-    client: {
-      entry: "./src/client.tsx",
+  plugins: [
+    TanStackRouterVite({
+      // Point at src/routes — same folder TanStack Router already scans
+      routesDirectory: "./src/routes",
+      generatedRouteTree: "./src/routeTree.gen.ts",
+      // Don't inject SSR helpers
+      ssr: false,
+    }),
+    react(),
+    tailwindcss(),
+    tsconfigPaths(),
+  ],
+  resolve: {
+    alias: {
+      "@": "/src",
     },
+  },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
   },
 });

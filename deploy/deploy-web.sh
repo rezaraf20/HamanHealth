@@ -8,10 +8,10 @@
 #   cd web
 #   bun install
 #   VITE_API_BASE_URL=https://api.hamanhealth.com/api VITE_USE_MOCKS=false bun run build
-#   # Output lands in: web/.output/public/
+#   # Output lands in: web/dist/
 #
 # ── Upload to server ─────────────────────────────────────────────────────────
-#   scp -P 2025 -r web/.output/public/ root@128.140.54.86:/tmp/haman-web-build/
+#   scp -P 2025 -r web/dist/ root@128.140.54.86:/tmp/haman-web-build/
 #   # Then on the server:
 #   bash /opt/hamanhealth/deploy/deploy-web.sh /tmp/haman-web-build
 #
@@ -32,10 +32,6 @@ echo "=== Haman Health — web deploy to ${APP_SUBDOMAIN} ==="
 # ── Find the actual build root (handle scp with/without trailing slash) ───────
 # scp -r dir/  → contents land directly in dest
 # scp -r dir   → a subdir is created inside dest
-#
-# After upload the layout can be:
-#   /tmp/haman-web-build/index.html          (trailing-slash scp, correct)
-#   /tmp/haman-web-build/public/index.html   (no trailing slash or nested)
 #
 # Walk down until we find index.html (max 2 levels).
 find_build_root() {
@@ -64,13 +60,20 @@ if [ -z "$BUILD_ROOT" ]; then
   echo "  VITE_API_BASE_URL=https://api.hamanhealth.com/api VITE_USE_MOCKS=false bun run build"
   echo ""
   echo "Then upload:"
-  echo "  scp -P 2025 -r web/.output/public/ root@128.140.54.86:/tmp/haman-web-build/"
+  echo "  scp -P 2025 -r web/dist/ root@128.140.54.86:/tmp/haman-web-build/"
   echo "  ssh -p 2025 root@128.140.54.86 'bash /opt/hamanhealth/deploy/deploy-web.sh /tmp/haman-web-build'"
   exit 1
 fi
 
 echo "Build root: $BUILD_ROOT"
-echo "index.html entry JS: $(grep -o 'index-[A-Za-z0-9_-]*\.js' "$BUILD_ROOT/index.html" | head -1)"
+
+# Verify index.html looks like a proper SPA shell (not SSR output)
+ENTRY_JS=$(grep -o 'src="/assets/index-[A-Za-z0-9_-]*\.js"' "$BUILD_ROOT/index.html" | head -1 || true)
+if [ -z "$ENTRY_JS" ]; then
+  # Try modulepreload pattern as fallback
+  ENTRY_JS=$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$BUILD_ROOT/index.html" | head -1 || true)
+fi
+echo "Entry JS: ${ENTRY_JS:-NOT FOUND — check that bun run build succeeded}"
 
 # ── Ensure subdomain public_html exists ───────────────────────────────────────
 if [ ! -d "$PUBLIC_HTML" ]; then
@@ -88,49 +91,8 @@ rsync -a --delete \
 chown -R "${DA_USER}:${DA_USER}" "$PUBLIC_HTML"
 
 # ── Verify the right index.html landed ────────────────────────────────────────
-DEPLOYED_ENTRY=$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PUBLIC_HTML/index.html" | head -1)
-echo "Deployed index.html entry JS: $DEPLOYED_ENTRY"
-
-# ── Build clean SPA shell from deployed index.html ───────────────────────────
-# TanStack Start prerenders the app and uses <Scripts /> which only works with
-# a running Node server. On static Apache, React never boots. Fix: extract the
-# entry JS from modulepreload links and inject it explicitly into <body>.
-INDEX="$PUBLIC_HTML/index.html"
-python3 - "$INDEX" <<'PYEOF'
-import sys, re
-
-path = sys.argv[1]
-html = open(path).read()
-
-# Find entry JS from modulepreload (index-HASH.js pattern)
-entry_href = None
-for tag in re.findall(r'<link[^>]+modulepreload[^>]*>', html):
-    m = re.search(r'href=["\']([^"\']*?/index-[^"\']+\.js)["\']', tag)
-    if m:
-        entry_href = m.group(1)
-        break
-
-if not entry_href:
-    # fallback: any modulepreload JS that looks like the main bundle
-    for tag in re.findall(r'<link[^>]+modulepreload[^>]*>', html):
-        m = re.search(r'href=["\']([^"\']+\.js)["\']', tag)
-        if m:
-            entry_href = m.group(1)
-            break
-
-script_tag = ('<script type="module" src="' + entry_href + '"></script>') if entry_href else '<!-- ERROR: no entry script found -->'
-
-# Replace body content with empty root + entry script
-html = re.sub(
-    r'(<body[^>]*>).*?(</body>)',
-    r'\1\n    <div id="root"></div>\n    ' + script_tag + r'\n  \2',
-    html,
-    flags=re.DOTALL
-)
-
-open(path, 'w').write(html)
-print("SPA shell written. Entry: " + (entry_href or "NOT FOUND — check index.html"))
-PYEOF
+DEPLOYED_ENTRY=$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PUBLIC_HTML/index.html" | head -1 || echo "NOT FOUND")
+echo "Deployed index.html entry: $DEPLOYED_ENTRY"
 
 # ── Write .htaccess for SPA routing ──────────────────────────────────────────
 cat > "$PUBLIC_HTML/.htaccess" <<'HTACCESS'
