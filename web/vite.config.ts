@@ -12,5 +12,8 @@ export default defineConfig({
   tanstackStart: {
     spa: { enabled: true },
     prerender: { enabled: false },
+    client: {
+      entry: "./src/client.tsx",
+    },
   },
 });
