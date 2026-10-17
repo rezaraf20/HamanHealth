@@ -1,39 +1,44 @@
-# Installing the Haman cough monitor (Android)
+# Installing Haman Health (Android)
 
-**File:** [`HamanCough-v0.2.0.apk`](HamanCough-v0.2.0.apk) ·  42M · Android 8.0 or newer
+**File:** [`HamanCough-v0.3.0.apk`](HamanCough-v0.3.0.apk) · Android 8.0 or newer
 
 ## Install
 
 1. On the phone, open this link in the browser. It downloads the APK directly:
-   **https://github.com/rezaraf20/HamanHealth/raw/CoughAnalysisModule/HamanCough-v0.2.0.apk**
+   **https://github.com/rezaraf20/HamanHealth/raw/android-app/HamanCough-v0.3.0.apk**
 2. Tap the downloaded file. If Android blocks it, allow **Install unknown apps** for
    your browser when prompted (Settings → Apps → *your browser* → Install unknown apps).
 3. Tap **Install**, then **Open**.
 
-If Android refuses because the app is already installed from a different build,
-uninstall the old **Haman** app first. Samsung and some other phones may show a Play
+Version 0.3.0 installs over 0.2.0 and keeps the nights already recorded on the phone;
+they are uploaded once you sign in. Samsung and some other phones may show a Play
 Protect warning for apps installed outside the Play Store — choose **Install anyway**.
 
 ## First launch
 
-1. Allow **microphone** and **notifications**.
-2. Tap **Allow background running** on the Tonight screen. Without it, Android usually
-   stops the recording partway through the night.
-3. **Settings → Run microphone diagnostics** — cough 2–3 times when each route starts
-   (~25 s). Which microphone route hears coughs best differs between phone models; this
-   picks the right one for your phone. Do it once per phone.
-4. On **Huawei**: also Settings → Battery → App launch → **Haman** → Manage manually, and
-   enable all three switches. EMUI otherwise closes the app overnight.
+1. The app opens the Haman Health sign-in screen. Sign in, or create an account. The app
+   needs an internet connection to open; a running night keeps recording without one.
+2. **Night session → Start**: allow **microphone** and **notifications**, then
+   **Allow** background running when asked. Without it, Android usually stops the
+   recording partway through the night.
+3. Once per phone: long-press the app icon → **Microphone test**, and cough 2–3 times
+   when each route starts (~25 s). Which microphone route hears coughs best differs
+   between phone models; this picks the right one for your phone.
+4. On **Huawei**: also Settings → Battery → App launch → **Haman Health** → Manage
+   manually, and enable all three switches. EMUI otherwise closes the app overnight.
 
-Then place the phone on the nightstand (plugged in) and tap **Start monitoring**.
-Detected coughs, sneezes and snoring appear under **History**, where each event can be
-played back and marked "Me / Someone else / Not a real event".
+Place the phone on the nightstand (plugged in) and start the night. A running night can
+always be stopped from its notification, even without a connection.
 
 ## Notes
 
-- All audio is analysed on the phone. Nothing is uploaded.
+- Sounds are analysed on the phone. After sign-in the app uploads the detected events
+  (time, type, scores), and a 2.5-second clip of each cough and sneeze unless you switch
+  **Short audio clips** off under Account → Privacy. A whole night is never recorded or
+  uploaded. Uploads wait for a connection and resume by themselves.
 - This logs sleep sounds. It is **not** a medical device and does not diagnose anything.
 - Integrity check — SHA-256 of the APK:
-  `2116012a4dde08857742d447f32e6ed5336113c942ed3fdbafe017ce0245da2b`
+  `03d3a1ece31edae4f2b0ba2a84436a5550481e102857c077cc1a023569cb01ff`
 
-Source and documentation: [`CoughAnalysisModule/`](CoughAnalysisModule/README.md).
+Source and documentation: [`CoughAnalysisModule/`](CoughAnalysisModule/README.md),
+[`backend/docs/ANDROID_APP_TASK.md`](backend/docs/ANDROID_APP_TASK.md).

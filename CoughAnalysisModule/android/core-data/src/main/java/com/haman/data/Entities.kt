@@ -1,5 +1,6 @@
 package com.haman.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -36,6 +37,17 @@ data class SessionEntity(
     val timezone: String? = null,
     /** Sensitivity dial (0-1) the night was recorded with. Null before schema v2. */
     val sensitivity: Float? = null,
+
+    // ── Platform upload state (schema v3) ────────────────────────────────────────
+    /** The platform's id for this night, once uploaded; clips are posted against it. */
+    val serverSessionId: Long? = null,
+    val lastUploadedAt: Long? = null,
+    /** True until the current contents of the night have reached the server. Set again
+     *  whenever the night changes (finished, labelled), so the change is re-sent. */
+    @ColumnInfo(defaultValue = "1") val uploadDirty: Boolean = true,
+    /** Set when the server rejected the night as malformed (HTTP 422): a bug, not a
+     *  network problem, so it is not retried. Holds the response body. */
+    val uploadError: String? = null,
 ) {
     companion object {
         const val STATUS_RUNNING = "running"
@@ -74,7 +86,18 @@ data class EventEntity(
     /** Start of the strongest analysis frame; the audio clip is cut around it.
      *  Null for events recorded before schema v2. */
     val peakFrameMs: Long? = null,
+    /** Upload state of this event's clip: null = pending (or no clip), else one of
+     *  CLIP_UPLOADED / CLIP_SKIPPED / CLIP_FAILED. Schema v3. */
+    val clipUpload: String? = null,
 ) {
+    companion object {
+        const val CLIP_UPLOADED = "uploaded"
+        /** Not sent and never will be: file gone, clips switched off, or the night's limit. */
+        const val CLIP_SKIPPED = "skipped"
+        /** The server rejected the file (HTTP 422). */
+        const val CLIP_FAILED = "failed"
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is EventEntity) return false
@@ -84,7 +107,7 @@ data class EventEntity(
             peakDb == other.peakDb && snrDb == other.snrDb && boutId == other.boutId &&
             subjectLabel == other.subjectLabel && subjectConfidence == other.subjectConfidence &&
             clipPath == other.clipPath && embeddingScale == other.embeddingScale &&
-            peakFrameMs == other.peakFrameMs &&
+            peakFrameMs == other.peakFrameMs && clipUpload == other.clipUpload &&
             (embedding?.contentEquals(other.embedding) ?: (other.embedding == null))
     }
 

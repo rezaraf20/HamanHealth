@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">Haman</string>
+    <string name="app_name">Haman Health</string>
+    <string name="shortcut_diagnostics_short">Microphone test</string>
+    <string name="shortcut_diagnostics_long">Microphone diagnostics</string>
 </resources>

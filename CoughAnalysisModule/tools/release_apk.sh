@@ -11,7 +11,7 @@ export JAVA_HOME="$(echo "$HOME"/Library/Java/JavaVirtualMachines/jdk-21*/Conten
 export PATH="$JAVA_HOME/bin:$PATH"
 
 cd "$MODULE/android"
-./gradlew :core-domain:test :app:assembleRelease
+./gradlew :core-domain:test :core-audio:testDebugUnitTest :app:testDebugUnitTest :app:assembleRelease
 
 VERSION=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"(.*)".*/\1/')
 OUT="$REPO/HamanCough-v$VERSION.apk"

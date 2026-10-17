@@ -1,5 +1,11 @@
 <resources>
+    <!-- Native diagnostics screen (Compose). -->
     <style name="Theme.Haman" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@android:color/background_dark</item>
+    </style>
+
+    <!-- The web interface. Capacitor's BridgeActivity is an AppCompatActivity. -->
+    <style name="Theme.Haman.Web" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
     </style>
 </resources>

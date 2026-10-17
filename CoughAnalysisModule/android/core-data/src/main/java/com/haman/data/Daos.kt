@@ -80,7 +80,8 @@ interface SessionDao {
     @Insert suspend fun insert(session: SessionEntity): Long
 
     @Query("UPDATE sessions SET endedAt = :endedAt, status = :status, noiseFloorDb = :floor, " +
-        "framesSeen = :framesSeen, framesInferred = :framesInferred, micGapMs = :micGapMs WHERE id = :id")
+        "framesSeen = :framesSeen, framesInferred = :framesInferred, micGapMs = :micGapMs, " +
+        "uploadDirty = 1 WHERE id = :id")
     suspend fun finish(id: Long, endedAt: Long, status: String, floor: Float,
                        framesSeen: Long, framesInferred: Long, micGapMs: Long)
 
@@ -97,7 +98,47 @@ interface SessionDao {
 
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /** Finished nights that started in [fromMs, toMs), newest first. */
+    @Query("SELECT * FROM sessions WHERE status != 'running' AND startedAt >= :fromMs " +
+        "AND startedAt < :toMs ORDER BY startedAt DESC")
+    suspend fun finishedBetween(fromMs: Long, toMs: Long): List<SessionEntity>
+
+    // ── Platform upload ──────────────────────────────────────────────────────────
+
+    /** Finished nights with anything still to upload: the night itself (never sent, or
+     *  changed since) or a clip of an uploaded event class. Nights the server rejected
+     *  as malformed are excluded; retrying them cannot succeed. */
+    @Query(PENDING_UPLOAD + " ORDER BY s.startedAt ASC")
+    suspend fun pendingUpload(): List<Long>
+
+    @Query("SELECT COUNT(*) FROM (" + PENDING_UPLOAD + ")")
+    suspend fun countPendingUpload(): Int
+
+    @Query("UPDATE sessions SET serverSessionId = :serverId, lastUploadedAt = :at, " +
+        "uploadDirty = 0 WHERE id = :id")
+    suspend fun markUploaded(id: Long, serverId: Long, at: Long)
+
+    @Query("UPDATE sessions SET uploadError = :error WHERE id = :id")
+    suspend fun markUploadRejected(id: Long, error: String)
+
+    @Query("UPDATE sessions SET uploadDirty = 1 WHERE id = :id")
+    suspend fun markChanged(id: Long)
+
+    companion object {
+        const val PENDING_UPLOAD =
+            "SELECT s.id FROM sessions s WHERE s.status != 'running' AND s.uploadError IS NULL " +
+            "AND (s.serverSessionId IS NULL OR s.uploadDirty = 1 OR EXISTS (" +
+            "SELECT 1 FROM events e WHERE e.sessionId = s.id AND e.clipPath IS NOT NULL " +
+            "AND e.clipUpload IS NULL AND e.cls IN ('COUGH', 'SNEEZE')))"
+    }
 }
+
+/** An event whose clip still has to be uploaded. */
+data class PendingClip(val id: Long, val clipPath: String)
+
+/** The cough events of a night, for the summary the web layer shows. */
+data class CoughTime(val startedAtMs: Long)
 
 @Dao
 interface EventDao {
@@ -147,6 +188,24 @@ interface EventDao {
         "WHERE e.sessionId = :sessionId AND e.cls IN (:classes) ORDER BY e.startedAtMs ASC"
     )
     suspend fun forUpload(sessionId: Long, classes: List<String>): List<UploadRow>
+
+    /** Clips of a night still to upload, for the given (uploaded) event classes. */
+    @Query("SELECT id, clipPath FROM events WHERE sessionId = :sessionId AND clipPath IS NOT NULL " +
+        "AND clipUpload IS NULL AND cls IN (:classes) ORDER BY startedAtMs ASC")
+    suspend fun pendingClips(sessionId: Long, classes: List<String>): List<PendingClip>
+
+    @Query("UPDATE events SET clipUpload = :state WHERE id = :id")
+    suspend fun setClipUpload(id: Long, state: String)
+
+    @Query("UPDATE events SET clipUpload = :state WHERE sessionId = :sessionId AND clipPath IS NOT NULL " +
+        "AND clipUpload IS NULL AND cls IN (:classes)")
+    suspend fun setPendingClipsUpload(sessionId: Long, classes: List<String>, state: String)
+
+    /** Coughs that count for the user (not rejected by them), same rule as the server. */
+    @Query("SELECT e.startedAtMs FROM events e LEFT JOIN labels l ON l.eventId = e.id " +
+        "WHERE e.sessionId = :sessionId AND e.cls = 'COUGH' " +
+        "AND (l.userLabel IS NULL OR l.userLabel = 'SUBJECT') ORDER BY e.startedAtMs ASC")
+    suspend fun countedCoughTimes(sessionId: Long): List<CoughTime>
 
     @Query("SELECT clipPath FROM events WHERE clipPath IS NOT NULL AND startedAtMs < :before")
     suspend fun clipsOlderThan(before: Long): List<String>

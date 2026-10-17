@@ -5,6 +5,7 @@ import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
@@ -15,10 +16,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MinuteRollupEntity::class,
         LabelEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
     // v2 only adds nullable columns (timezone, sensitivity, peakFrameMs), which Room
     // migrates from the exported schemas without losing existing nights.
+    // v3 (upload state) is a hand-written migration: MIGRATION_2_3 below.
     autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class HamanDatabase : RoomDatabase() {
@@ -32,10 +34,26 @@ abstract class HamanDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: HamanDatabase? = null
 
+        /**
+         * v3: platform upload state. Every night that already exists starts out
+         * "dirty" (uploadDirty = 1) and without a server id, so nights recorded before
+         * this version are uploaded once the user signs in.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sessions` ADD COLUMN `serverSessionId` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `sessions` ADD COLUMN `lastUploadedAt` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `sessions` ADD COLUMN `uploadDirty` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `sessions` ADD COLUMN `uploadError` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `events` ADD COLUMN `clipUpload` TEXT DEFAULT NULL")
+            }
+        }
+
         fun get(context: Context): HamanDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, HamanDatabase::class.java, "haman.db"
             )
+                .addMigrations(MIGRATION_2_3)
                 // WAL keeps the long-running writer from blocking UI reads.
                 //
                 // Set through the builder, NOT via execSQL("PRAGMA journal_mode=WAL").

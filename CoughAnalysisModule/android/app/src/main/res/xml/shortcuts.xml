@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon → "Microphone test" opens the native diagnostics screen. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="diagnostics"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_btn_speak_now"
+        android:shortcutShortLabel="@string/shortcut_diagnostics_short"
+        android:shortcutLongLabel="@string/shortcut_diagnostics_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.haman.sleep"
+            android:targetClass="com.haman.sleep.DiagnosticsActivity" />
+    </shortcut>
+</shortcuts>

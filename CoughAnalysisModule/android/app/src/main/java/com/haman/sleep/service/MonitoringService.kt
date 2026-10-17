@@ -31,10 +31,12 @@ import com.haman.inference.YamnetClassifier
 import com.haman.sleep.MainActivity
 import com.haman.sleep.R
 import com.haman.sleep.data.Prefs
+import com.haman.sleep.sync.SyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -64,17 +66,24 @@ class MonitoringService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP -> {
+                MonitorState.update { it.copy(stopping = it.running) }
+                stopSelf(); return START_NOT_STICKY
+            }
         }
         if (captureThread != null) return START_STICKY
 
+        // Set by the CoughSession plugin; absent when the system restarts the service.
+        val sensitivity = intent?.getFloatExtra(EXTRA_SENSITIVITY, -1f)?.takeIf { it in 0f..1f }
+        val autoStopAt = intent?.getLongExtra(EXTRA_AUTO_STOP_AT, 0L) ?: 0L
+
         startForegroundNotification()
         acquireWakeLock()
-        captureThread = thread(name = "haman-capture", start = true) { runSession() }
+        captureThread = thread(name = "haman-capture", start = true) { runSession(sensitivity, autoStopAt) }
         return START_STICKY
     }
 
-    private fun runSession() = runBlocking {
+    private fun runSession(sensitivityOverride: Float?, autoStopAt: Long) = runBlocking {
         val db = HamanDatabase.get(applicationContext)
         val prefs = Prefs(applicationContext)
         val sampleRate = YamnetClassifier.SAMPLE_RATE
@@ -95,7 +104,8 @@ class MonitoringService : Service() {
         }
         classifier = clf
 
-        val config = loadConfig(prefs)
+        val sensitivity = sensitivityOverride ?: prefs.readSensitivity()
+        val config = loadConfig(sensitivity)
         val pipeline = DetectionPipeline(config, frameHopMs = HOP_MS)
         AttributionStore(db).configure(pipeline.attribution, prefs.readCalibration())
 
@@ -108,7 +118,7 @@ class MonitoringService : Service() {
                 audioSource = cap.activeRoute.toString(),
                 configJson = config.toJson(),
                 timezone = java.util.TimeZone.getDefault().id,
-                sensitivity = prefs.readSensitivity(),
+                sensitivity = sensitivity,
             )
         )
         val writer = SessionWriter(db, sessionId)
@@ -117,7 +127,14 @@ class MonitoringService : Service() {
 
         MonitorState.update {
             it.copy(running = true, sessionId = sessionId, startedAt = startedAt,
-                audioSource = cap.activeRoute.toString(), error = null, bandLimited = null)
+                audioSource = cap.activeRoute.toString(), error = null, bandLimited = null,
+                autoStopAt = autoStopAt, stopping = false, counts = emptyMap())
+        }
+        // Enforced here, not in the interface: the interface may be closed or offline.
+        if (autoStopAt > 0) scope.launch {
+            delay((autoStopAt - System.currentTimeMillis()).coerceAtLeast(0))
+            MonitorState.update { it.copy(stopping = true) }
+            stopSelf()
         }
 
         // Debug builds only, and only when files/debug_raw exists (created via
@@ -198,6 +215,7 @@ class MonitoringService : Service() {
                     val clipPath = if (keepClips) saveClip(ring, clipsDir, event.peakFrameMs,
                         startedAt, sampleRate, event.cls.name, event.startMs) else null
                     writer.addEvent(event, pipeline.embeddingFor(event.peakFrameMs), clipPath)
+                    MonitorState.emit(sessionId, event)
                     MonitorState.update {
                         it.copy(lastEventAt = event.startMs, lastEventClass = event.cls,
                             counts = counts.toMap())
@@ -224,7 +242,10 @@ class MonitoringService : Service() {
         runCatching { rawDump?.close() }
         val endedAt = System.currentTimeMillis()
         val tail = pipeline.flush(endedAt)
-        tail.events.forEach { writer.addEvent(it, pipeline.embeddingFor(it.peakFrameMs), null) }
+        tail.events.forEach {
+            writer.addEvent(it, pipeline.embeddingFor(it.peakFrameMs), null)
+            MonitorState.emit(sessionId, it)
+        }
         tail.completedEpisodes.forEach(writer::addEpisode)
         writer.addBuckets(tail.completedBuckets)
         runCatching { writer.flush() }.onFailure { Log.e(TAG, "final flush failed", it) }
@@ -236,9 +257,13 @@ class MonitoringService : Service() {
             framesSeen = pipeline.framesSeen, framesInferred = pipeline.framesInferred,
             micGapMs = MonitorState.state.value.micGapMs,
         )
+        MonitorState.update {
+            it.copy(running = false, stopping = false, autoStopAt = 0, lastFinishedSessionId = sessionId)
+        }
+        // The night is complete in the database: hand it to the background upload.
+        SyncScheduler.enqueueSession(applicationContext, sessionId)
         applyRetention(db, prefs)
         clf.close()
-        MonitorState.update { it.copy(running = false) }
     }
 
     /**
@@ -275,7 +300,7 @@ class MonitoringService : Service() {
         db.events().clearClipsOlderThan(cutoff)
     }
 
-    private fun loadConfig(prefs: Prefs): DetectorConfig {
+    private fun loadConfig(sensitivity: Float): DetectorConfig {
         // A tuned config shipped by ml/tune_thresholds.py takes precedence over the
         // hand-set defaults; the sensitivity dial is applied on top of whichever wins.
         val base = runCatching {
@@ -284,7 +309,7 @@ class MonitoringService : Service() {
             Log.i(TAG, "no tuned config in assets, using defaults")
             DetectorConfig.DEFAULT
         }
-        return base.withSensitivity(prefs.readSensitivity())
+        return base.withSensitivity(sensitivity)
     }
 
     private fun appVersion(): String = runCatching {
@@ -322,7 +347,7 @@ class MonitoringService : Service() {
         )
         val n: Notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Listening")
-            .setContentText("Monitoring sleep sounds. Audio stays on this device.")
+            .setContentText("Monitoring sleep sounds. Only short clips of detected sounds are kept.")
             .setSmallIcon(android.R.drawable.presence_audio_online)
             .setOngoing(true)
             .setContentIntent(open)
@@ -338,6 +363,7 @@ class MonitoringService : Service() {
 
     override fun onDestroy() {
         stopping = true
+        MonitorState.update { it.copy(stopping = it.running) }
         capture?.stop()
         captureThread?.join(5_000)
         wakeLock?.let { if (it.isHeld) it.release() }
@@ -352,6 +378,10 @@ class MonitoringService : Service() {
         private const val NOTIF_ID = 1001
         const val ACTION_STOP = "com.haman.sleep.STOP"
         const val CONFIG_ASSET = "detector_config.json"
+        /** Float 0-1: the sensitivity dial for this session, overriding the saved one. */
+        const val EXTRA_SENSITIVITY = "com.haman.sleep.SENSITIVITY"
+        /** Long epoch ms: end the session by itself at this time. */
+        const val EXTRA_AUTO_STOP_AT = "com.haman.sleep.AUTO_STOP_AT"
 
         const val HOP_MS = 480L
         const val HOP_SAMPLES = 7680        // 480 ms at 16 kHz
@@ -360,8 +390,10 @@ class MonitoringService : Service() {
         /** Low-band level a 2 s window must reach before its bandwidth is judged. */
         const val BANDWIDTH_JUDGE_MIN_DB = -75f
 
-        fun start(context: Context) {
+        fun start(context: Context, sensitivity: Float? = null, autoStopAt: Long = 0) {
             val i = Intent(context, MonitoringService::class.java)
+            sensitivity?.let { i.putExtra(EXTRA_SENSITIVITY, it) }
+            if (autoStopAt > 0) i.putExtra(EXTRA_AUTO_STOP_AT, autoStopAt)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
             else context.startService(i)
         }

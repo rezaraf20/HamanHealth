@@ -9,7 +9,7 @@ Night-time cough monitoring wellness app for Android.
 hamanhealth/
 ├── backend/          # FastAPI + PostgreSQL API server
 ├── web/              # TanStack Start SPA (Capacitor web layer)
-├── android/          # Android native modules (Behzad's cough engine)
+├── CoughAnalysisModule/android/   # The Android app: Capacitor shell + cough engine
 └── deploy/           # Docker Compose + Apache vhost configs
 ```
 
@@ -70,6 +70,25 @@ bun run build        # production build → .output/public/
 ```
 
 Set `VITE_API_BASE_URL=https://api.hamanhealth.com/api` in `.env.local` to use the real backend.
+
+## Android App
+
+One APK: the web interface (loaded live from `https://app.hamanhealth.com` in a
+Capacitor WebView) with the on-device cough detector underneath as the `CoughSession`
+plugin, which also uploads finished nights and clips in the background.
+Task and contract: `backend/docs/ANDROID_APP_TASK.md`, `web/src/lib/cough-session.plugin.ts`.
+
+```bash
+CoughAnalysisModule/tools/setup_env.sh     # JDK + Android SDK, once (macOS)
+CoughAnalysisModule/tools/release_apk.sh   # tests + release APK → HamanCough-v<version>.apk here
+```
+
+No node or bun is needed: the build copies `web/native-shell` and
+`web/capacitor.config.json` into the APK itself.
+
+**Privacy:** after sign-in the app uploads the detected events, and a 2.5-second clip of
+each cough and sneeze unless the user switches clips off (Account → Privacy). A whole
+night is never recorded or uploaded.
 
 ## Branches
 

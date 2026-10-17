@@ -1,5 +1,7 @@
 package com.haman.sleep
 
+import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.haman.data.EventEntity
@@ -8,7 +10,9 @@ import com.haman.data.PlatformPayload
 import com.haman.data.SessionEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -109,5 +113,62 @@ class DatabaseIntegrityTest {
             assertTrue(hasDeviceClip)
         }
         db.sessions().delete(id)
+    }
+
+    // ── Schema v2 → v3 (upload state) ────────────────────────────────────────────
+    // Keeps every night, event and label, and marks existing nights for upload. Uses
+    // its own database file, never the app's real one.
+
+    private val dbName = "migration-test.db"
+
+    @get:Rule
+    val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), HamanDatabase::class.java)
+
+    @Test
+    fun v2_to_v3_keeps_sessions_events_and_labels(): Unit = runBlocking {
+        helper.createDatabase(dbName, 2).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, startedAt, endedAt, deviceModel, appVersion, audioSource, " +
+                "noiseFloorDb, configJson, status, framesSeen, framesInferred, micGapMs, timezone, sensitivity) " +
+                "VALUES (7, 1760043600000, 1760072400000, 'SM-S911B', '0.2.0', 'CAMCORDER@48k', " +
+                "-62.5, '{}', 'complete', 60000, 21000, 0, 'Europe/Amsterdam', 0.5)"
+            )
+            db.execSQL(
+                "INSERT INTO events (id, sessionId, cls, startedAtMs, endedAtMs, peakScore, meanScore, " +
+                "peakDb, snrDb, boutId, subjectLabel, subjectConfidence, clipPath, peakFrameMs) " +
+                "VALUES (70, 7, 'COUGH', 1760048103120, 1760048104560, 0.9, 0.7, -21.0, 38.0, 1, " +
+                "'SUBJECT', 0.8, '/data/clip.wav', 1760048103600)"
+            )
+            db.execSQL("INSERT INTO labels (id, eventId, userLabel, labeledAt) VALUES (1, 70, 'OTHER', 1760080000000)")
+        }
+
+        helper.runMigrationsAndValidate(dbName, 3, true, HamanDatabase.MIGRATION_2_3).close()
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val room = Room.databaseBuilder(context, HamanDatabase::class.java, dbName)
+            .addMigrations(HamanDatabase.MIGRATION_2_3).build()
+        try {
+            val s = room.sessions().byId(7)!!
+            assertEquals("Europe/Amsterdam", s.timezone)
+            assertEquals(60000L, s.framesSeen)
+            // New upload state: not uploaded yet, marked for upload.
+            assertNull(s.serverSessionId)
+            assertTrue(s.uploadDirty)
+            assertNull(s.uploadError)
+            assertEquals(listOf(7L), room.sessions().pendingUpload())
+
+            val e = room.events().byId(70)!!
+            assertEquals("/data/clip.wav", e.clipPath)
+            assertEquals(1760048103600L, e.peakFrameMs)
+            assertNull(e.clipUpload)
+            assertEquals(listOf(70L), room.events().pendingClips(7, listOf("COUGH", "SNEEZE")).map { it.id })
+
+            // The label survived, and it still keeps the cough out of the user's count.
+            assertEquals("OTHER", room.events().forExport(7).single().userLabel)
+            assertEquals(0, room.events().countedCoughTimes(7).size)
+        } finally {
+            room.close()
+            context.deleteDatabase(dbName)
+        }
     }
 }

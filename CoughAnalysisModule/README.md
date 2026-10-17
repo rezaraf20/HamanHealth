@@ -3,7 +3,9 @@
 A module of **HamanHealth** that listens overnight and logs **coughs, sneezes and
 snoring** to a local database on the phone.
 
-Everything runs on the device. No audio is uploaded.
+Detection runs on the device. In the Haman Health app, after sign-in, the detected events
+are uploaded, together with a 2.5-second clip of each cough and sneeze unless the user
+switches clips off. A whole night is never recorded or uploaded.
 
 Android first (Kotlin + Jetpack Compose), structured so the detection core can move to
 iOS later without a rewrite.
@@ -76,7 +78,7 @@ Raw frames are never stored. Three tiers instead:
 | `minute_rollup` | per-minute × class counters, so the timeline chart reads ~480 rows instead of scanning everything |
 | `labels` | your "me / someone else / not real" verdicts, which train attribution |
 
-Optional 2.5-second audio clips are saved per event, on-device only, with a retention
+Optional 2.5-second audio clips are saved per event on the phone, with a retention
 window. They exist so a false positive can be checked and corrected.
 
 ---
