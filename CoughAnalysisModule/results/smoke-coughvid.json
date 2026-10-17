@@ -1,0 +1,22 @@
+{
+  "dataset": "coughvid",
+  "coughvid_threshold": 0.5,
+  "results": [
+    {
+      "model": "coughkit",
+      "records": 2,
+      "load_seconds": 0.053118166999865934,
+      "peak_rss_delta_mb": 119.865344,
+      "mean_latency_ms": 356.98100050012727,
+      "p50_latency_ms": 356.98100050012727,
+      "p95_latency_ms": 543.2746253501136,
+      "audio_seconds_per_wall_second": 27.312377931431463,
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "roc_auc": 1.0,
+      "average_precision": 1.0
+    }
+  ]
+}
