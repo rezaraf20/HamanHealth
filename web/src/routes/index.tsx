@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Bell, Footprints, Moon, Pill, Scale, Wind } from "lucide-react";
+import { Activity, AudioLines, Bell, Footprints, Moon, Pill, Scale, Wind } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { HourlyBars } from "@/components/charts";
@@ -24,7 +24,8 @@ export const Route = createFileRoute("/")({
 });
 
 const QUICK = [
-  { to: "/nights", icon: Moon, label: "Night sounds" },
+  { to: "/session", icon: Moon, label: "Start night session" },
+  { to: "/nights", icon: AudioLines, label: "Night sounds" },
   { to: "/trends", icon: Activity, label: "View trends" },
   { to: "/records", icon: Pill, label: "Add a record" },
 ] as const;

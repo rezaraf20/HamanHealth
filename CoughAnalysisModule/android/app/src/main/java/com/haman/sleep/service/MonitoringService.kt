@@ -348,7 +348,7 @@ class MonitoringService : Service() {
         val n: Notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Listening")
             .setContentText("Monitoring sleep sounds. Only short clips of detected sounds are kept.")
-            .setSmallIcon(android.R.drawable.presence_audio_online)
+            .setSmallIcon(R.drawable.ic_stat_haman)
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())
