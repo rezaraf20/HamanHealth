@@ -11,8 +11,8 @@ android {
         applicationId = "com.haman.sleep"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.3.1"
         // On-device tests: the model wrapper and the database can only be exercised
         // against a real TFLite runtime and a real SQLite, not on the JVM.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
