@@ -17,7 +17,7 @@ X-Admin-Secret header (see routers/admin.py).
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import Float, case, cast, func, select
 from sqlalchemy.orm import Session
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from ..clips_db import AudioClip, get_clips_db
 from ..database import get_db
 from ..models import CoughEvent, CoughEventFeatures, CoughSession, User, UserConsent
+from ..services.admin_security import audit
 from .admin import AdminUser
 
 router = APIRouter(prefix="/api/admin/insight", tags=["admin-insight"])
@@ -469,6 +470,7 @@ def _session_row(s: CoughSession) -> SessionRow:
 @router.get("/users/{user_id}/sessions", response_model=list[SessionRow])
 def user_sessions(
     user_id: int,
+    request: Request,
     _admin=AdminUser,
     db: Session = Depends(get_db),
     limit: int = Query(50, ge=1, le=500),
@@ -478,6 +480,8 @@ def user_sessions(
     admin UI has no way to reach today."""
     if db.get(User, user_id) is None:
         raise HTTPException(status_code=404, detail="User not found")
+    audit(db, _admin, "user.sessions.view", request, "user", user_id)
+    db.commit()
     sessions = db.scalars(
         select(CoughSession).where(CoughSession.user_id == user_id)
         .order_by(CoughSession.started_at.desc()).offset(offset).limit(limit)
@@ -514,6 +518,7 @@ class SessionDetail(BaseModel):
 @router.get("/sessions/{session_id}", response_model=SessionDetail)
 def session_detail(
     session_id: int,
+    request: Request,
     _admin=AdminUser,
     db: Session = Depends(get_db),
     limit: int = Query(500, ge=1, le=2000),
@@ -523,6 +528,8 @@ def session_detail(
     s = db.get(CoughSession, session_id)
     if s is None:
         raise HTTPException(status_code=404, detail="Session not found")
+    audit(db, _admin, "session.view", request, "session", session_id, {"user_id": s.user_id})
+    db.commit()
 
     events = db.scalars(
         select(CoughEvent).where(CoughEvent.session_id == session_id)

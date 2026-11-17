@@ -13,6 +13,8 @@ from .routers import records
 from .routers import clips
 from .routers import observations
 from .routers import admin_insight
+from .routers import admin_reports
+from .routers import admin_security
 
 settings = get_settings()
 
@@ -53,6 +55,8 @@ app.include_router(records.router)
 app.include_router(clips.router)
 app.include_router(observations.router)
 app.include_router(admin_insight.router)
+app.include_router(admin_reports.router)
+app.include_router(admin_security.router)
 
 
 @app.get("/api/health")

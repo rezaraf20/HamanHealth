@@ -12,7 +12,7 @@ Endpoints:
 """
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -21,6 +21,7 @@ from ..auth import CurrentUser
 from ..config import get_settings
 from ..database import get_db
 from ..models import User, CoughSession, CoughEvent, HealthObservation, UserConsent
+from ..services import admin_security as sec
 from .records import HealthRecord
 
 settings = get_settings()
@@ -29,15 +30,34 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ── Auth helper ──────────────────────────────────────────────────────────────
 
-def require_admin(
+def require_admin_basic(
     current_user: CurrentUser,
     x_admin_secret: str | None = Header(default=None),
 ):
+    """Login + admin flag + shared secret. Enough to reach the 2FA enrolment endpoints."""
     if x_admin_secret != settings.admin_secret:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin secret")
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return current_user
+
+
+def require_admin(
+    request: Request,
+    admin: User = Depends(require_admin_basic),
+    db: Session = Depends(get_db),
+    x_admin_2fa: str | None = Header(default=None),
+):
+    """Everything else: additionally a valid 2FA token once the admin has enrolled (or
+    always, when ADMIN_REQUIRE_2FA is on). The detail code lets the panel show the code
+    prompt or the enrolment page instead of a generic error."""
+    enrolled = sec.is_enrolled(db, admin.id)
+    if enrolled is not None:
+        if not sec.token_is_valid(x_admin_2fa, admin.id, enrolled.enabled_at):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin_2fa_required")
+    elif settings.admin_require_2fa:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin_2fa_enrolment_required")
+    return admin
 
 
 AdminUser = Depends(require_admin)
@@ -147,16 +167,19 @@ def get_user(user_id: int, _admin=AdminUser, db: Session = Depends(get_db)):
 
 
 @router.put("/users/{user_id}", response_model=UserSummary)
-def update_user(user_id: int, body: UserUpdateRequest, _admin=AdminUser, db: Session = Depends(get_db)):
+def update_user(user_id: int, body: UserUpdateRequest, request: Request,
+                _admin=AdminUser, db: Session = Depends(get_db)):
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
-    if body.is_active is not None:
-        u.is_active = body.is_active
-    if body.is_admin is not None:
-        u.is_admin = body.is_admin
-    if body.name is not None:
-        u.name = body.name
+    changes: dict[str, dict] = {}
+    for field in ("is_active", "is_admin", "name"):
+        new = getattr(body, field)
+        if new is not None and new != getattr(u, field):
+            changes[field] = {"from": getattr(u, field), "to": new}
+            setattr(u, field, new)
+    if changes:
+        sec.audit(db, _admin, "user.update", request, "user", user_id, {"changes": changes})
     db.commit()
     db.refresh(u)
     return get_user(user_id, _admin, db)
@@ -191,7 +214,12 @@ def get_config(_admin=AdminUser):
 
 
 @router.put("/config", response_model=AppConfig)
-def update_config(body: AppConfig, _admin=AdminUser):
+def update_config(body: AppConfig, request: Request, _admin=AdminUser, db: Session = Depends(get_db)):
     global _app_config
+    before = _app_config.model_dump()
     _app_config = body
+    changed = {k: {"from": before[k], "to": v} for k, v in body.model_dump().items() if before[k] != v}
+    if changed:
+        sec.audit(db, _admin, "config.update", request, "config", None, {"changes": changed})
+        db.commit()
     return _app_config

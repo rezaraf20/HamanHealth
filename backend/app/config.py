@@ -28,6 +28,14 @@ class Settings(BaseSettings):
 
     # Admin
     admin_secret: str = "CHANGE_ADMIN_SECRET"
+    # When True, every admin must have TOTP enrolled and verified to use the admin API.
+    # Leave False while admins enrol (otherwise nobody could reach the enrolment page);
+    # an admin who has finished enrolment is always held to 2FA, whatever this says.
+    admin_require_2fa: bool = False
+    admin_2fa_session_minutes: int = 8 * 60
+    admin_2fa_issuer: str = "Haman Health Admin"
+    # Audit rows older than this are deleted by app.jobs.purge_audit_log.
+    audit_retention_days: int = 730
 
     # Clip storage (pseudonymised audio, 90-day TTL)
     clips_dir: str = "/var/haman/clips"

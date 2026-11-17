@@ -125,6 +125,24 @@
 
     .preview-bar { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
     .color-swatch { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border); }
+
+    /* Reports, audit, security */
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .toolbar select, .toolbar input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem; background: var(--surface); }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--shadow); }
+    .panel h3 { font-size: .95rem; margin-bottom: 4px; }
+    .panel .desc { font-size: .78rem; color: var(--text-muted); margin-bottom: 12px; }
+    .bars { display: flex; align-items: flex-end; gap: 2px; height: 90px; margin: 8px 0 4px; }
+    .bars div { flex: 1; background: var(--primary); border-radius: 2px 2px 0 0; min-height: 2px; opacity: .85; }
+    .bar-axis { display: flex; justify-content: space-between; font-size: .7rem; color: var(--text-muted); }
+    .hist { display: grid; grid-template-columns: 70px 1fr 50px; gap: 6px 10px; align-items: center; font-size: .82rem; }
+    .hist .track { background: var(--primary-light); border-radius: 4px; height: 12px; }
+    .hist .fill { background: var(--primary); height: 100%; border-radius: 4px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+    code.secret { display: block; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: .95rem; letter-spacing: .08em; word-break: break-all; margin: 8px 0; }
+    .banner { background: var(--warn-light); color: #92400e; border-radius: 8px; padding: 10px 14px; font-size: .85rem; margin-bottom: 16px; }
+    .detail-cell { font-family: ui-monospace, monospace; font-size: .72rem; color: var(--text-muted); max-width: 360px; word-break: break-word; }
   </style>
 </head>
 <body>
@@ -151,6 +169,11 @@
       <input type="password" id="login-secret" placeholder="Admin secret key" />
       <p class="hint">Set via ADMIN_SECRET env variable on the server.</p>
     </div>
+    <div class="field" id="login-code-field" style="display:none">
+      <label>Authenticator code</label>
+      <input type="text" id="login-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" />
+      <p class="hint">From your authenticator app. Each code works once.</p>
+    </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:4px" onclick="doLogin()">Sign In</button>
   </div>
 </div>
@@ -171,6 +194,10 @@
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Users</span>
       </a></li>
+      <li><a onclick="showPage('reports')" data-page="reports">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Reports</span>
+      </a></li>
       <li><a onclick="showPage('theme')" data-page="theme">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
         <span>Theme &amp; Branding</span>
@@ -178,6 +205,14 @@
       <li><a onclick="showPage('content')" data-page="content">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         <span>Content</span>
+      </a></li>
+      <li><a onclick="showPage('audit')" data-page="audit">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+        <span>Audit Log</span>
+      </a></li>
+      <li><a onclick="showPage('security')" data-page="security">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span>Security</span>
       </a></li>
     </ul>
     <div class="logout">
@@ -300,6 +335,81 @@
         <button class="btn btn-primary" onclick="saveConfig()">Save Content</button>
       </div>
     </div>
+
+    <div id="banner-2fa" class="banner" style="display:none">Two-factor authentication is not enabled for your account. <a href="#" onclick="showPage('security');return false">Set it up</a></div>
+
+    <!-- Reports -->
+    <div class="page" id="page-reports">
+      <h2>Reports</h2>
+      <div class="toolbar">
+        <label style="font-size:.85rem">Period
+          <select id="rp-days" onchange="loadReports()">
+            <option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option><option value="365">Last 12 months</option>
+          </select></label>
+        <span style="font-size:.78rem;color:var(--text-muted)">Aggregate numbers only. Dates are UTC; weeks start Monday. "Active" = recorded a night, saved a reading or uploaded a record.</span>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card"><div class="label">Active (24 h)</div><div class="value" id="rp-a1">—</div></div>
+        <div class="stat-card"><div class="label">Active (7 days)</div><div class="value" id="rp-a7">—</div></div>
+        <div class="stat-card"><div class="label">Active (30 days)</div><div class="value" id="rp-a30">—</div><div class="sub" id="rp-sticky"></div></div>
+        <div class="stat-card"><div class="label">Nights recorded</div><div class="value" id="rp-nights">—</div><div class="sub" id="rp-nights-sub"></div></div>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center"><h3>Daily active users</h3><button class="btn btn-sm btn-outline" onclick="exportCsv('activity')">Export CSV</button></div>
+        <div class="bars" id="rp-active-bars"></div><div class="bar-axis" id="rp-active-axis"></div>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center"><h3>New sign-ups</h3>
+          <span><select id="rp-bucket" onchange="loadReports()"><option value="day">per day</option><option value="week" selected>per week</option><option value="month">per month</option></select>
+          <button class="btn btn-sm btn-outline" onclick="exportCsv('signups')">Export CSV</button></span></div>
+        <div class="bars" id="rp-signup-bars"></div><div class="bar-axis" id="rp-signup-axis"></div>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center"><h3>Retention by sign-up week</h3><button class="btn btn-sm btn-outline" onclick="exportCsv('retention')">Export CSV</button></div>
+        <p class="desc">Share of each week's new users who were active again 1–4 weeks later. A dash means that week is not over yet.</p>
+        <div class="table-wrap"><table><thead><tr><th>Week of</th><th>Users</th><th>+1 wk</th><th>+2 wk</th><th>+3 wk</th><th>+4 wk</th></tr></thead><tbody id="rp-retention"></tbody></table></div>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center"><h3>Feature usage</h3><button class="btn btn-sm btn-outline" onclick="exportCsv('usage')">Export CSV</button></div>
+          <p class="desc">Users who used each feature in the period.</p>
+          <div class="table-wrap"><table><thead><tr><th>Feature</th><th>Users</th><th>% of active</th><th>Entries</th></tr></thead><tbody id="rp-usage"></tbody></table></div>
+        </div>
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center"><h3>How nights are recorded</h3><button class="btn btn-sm btn-outline" onclick="exportCsv('nights')">Export CSV</button></div>
+          <p class="desc">Nights per user, and coughs per finished night.</p>
+          <div class="hist" id="rp-hist-users"></div><div style="height:14px"></div><div class="hist" id="rp-hist-coughs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit log -->
+    <div class="page" id="page-audit">
+      <h2>Audit Log</h2>
+      <div class="toolbar">
+        <select id="au-action" onchange="loadAudit(0)">
+          <option value="">All actions</option><option>user.update</option><option>config.update</option>
+          <option>report.export</option><option>user.sessions.view</option><option>session.view</option>
+          <option>2fa.enabled</option><option>2fa.disabled</option><option>2fa.failed</option><option>2fa.locked</option>
+        </select>
+        <select id="au-days" onchange="loadAudit(0)"><option value="">All time</option><option value="1">Last 24 h</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
+        <span id="au-total" style="font-size:.8rem;color:var(--text-muted)"></span>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr></thead><tbody id="au-tbody"></tbody></table></div>
+      <div class="toolbar" style="margin-top:12px"><button class="btn btn-sm btn-outline" id="au-prev" onclick="loadAudit(auditOffset-AUDIT_PAGE)">← Newer</button><button class="btn btn-sm btn-outline" id="au-next" onclick="loadAudit(auditOffset+AUDIT_PAGE)">Older →</button></div>
+    </div>
+
+    <!-- Security -->
+    <div class="page" id="page-security">
+      <h2>Security</h2>
+      <div class="panel" style="max-width:560px" id="sec-panel"></div>
+    </div>
   </main>
 </div>
 
@@ -335,10 +445,41 @@ let token = sessionStorage.getItem('haman_admin_token') || '';
 let adminSecret = sessionStorage.getItem('haman_admin_secret') || '';
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
+let tfaToken = sessionStorage.getItem('haman_admin_2fa') || '';
+
+function rawAdminFetch(path, opts = {}) {
+  return fetch(`${API}${path}`, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'X-Admin-Secret': adminSecret,
+      ...(tfaToken ? { 'X-Admin-2FA': tfaToken } : {}),
+      ...(opts.headers || {}),
+    },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+}
+
+// Normal calls: if the 2FA session has run out, go back to the sign-in screen.
+async function adminFetch(path, opts = {}) {
+  const res = await rawAdminFetch(path, opts);
+  if (res.status === 403) {
+    const d = await res.clone().json().catch(() => ({}));
+    if (d.detail === 'admin_2fa_required') {
+      sessionStorage.removeItem('haman_admin_2fa');
+      showToast('Session expired — please sign in again');
+      setTimeout(() => location.reload(), 1200);
+    }
+  }
+  return res;
+}
+
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   const secret = document.getElementById('login-secret').value;
+  const code = document.getElementById('login-code').value.trim();
   const errEl = document.getElementById('login-error');
   errEl.classList.remove('show');
   try {
@@ -348,42 +489,58 @@ async function doLogin() {
       body: JSON.stringify({ email, password }),
     });
     if (!res.ok) throw new Error('auth failed');
-    const data = await res.json();
-    token = data.access;
+    token = (await res.json()).access;
     adminSecret = secret;
+    tfaToken = '';
     sessionStorage.setItem('haman_admin_token', token);
     sessionStorage.setItem('haman_admin_secret', adminSecret);
-    // Verify admin access
-    const check = await adminFetch('/admin/stats');
+
+    let check = await rawAdminFetch('/admin/stats');
+    let detail = check.status === 403 ? (await check.clone().json().catch(() => ({}))).detail : null;
+
+    if (detail === 'admin_2fa_required') {
+      if (!code) {                                   // ask for the code, then sign in again
+        document.getElementById('login-code-field').style.display = '';
+        document.getElementById('login-code').focus();
+        errEl.textContent = 'Enter the 6-digit code from your authenticator app.';
+        errEl.classList.add('show');
+        return;
+      }
+      const v = await rawAdminFetch('/admin/2fa/verify', { method: 'POST', body: { code } });
+      if (!v.ok) {
+        errEl.textContent = v.status === 429 ? 'Too many wrong codes. Try again in 15 minutes.' : 'That code was not accepted.';
+        errEl.classList.add('show');
+        return;
+      }
+      tfaToken = (await v.json()).token;
+      sessionStorage.setItem('haman_admin_2fa', tfaToken);
+      check = await rawAdminFetch('/admin/stats');
+      detail = null;
+    }
+    if (detail === 'admin_2fa_enrolment_required') {  // allowed in only to enrol
+      showApp(true);
+      return;
+    }
     if (!check.ok) throw new Error('not admin');
     showApp();
   } catch {
+    errEl.textContent = 'Invalid credentials or not an admin account.';
     errEl.classList.add('show');
   }
 }
 
 function doLogout() {
-  token = ''; adminSecret = '';
+  token = ''; adminSecret = ''; tfaToken = '';
   sessionStorage.clear();
   location.reload();
 }
 
-function adminFetch(path, opts = {}) {
-  return fetch(`${API}${path}`, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'X-Admin-Secret': adminSecret,
-      ...(opts.headers || {}),
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-}
-
-function showApp() {
+async function showApp(enrolmentOnly = false) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+  const st = await rawAdminFetch('/admin/2fa/status').then(r => r.ok ? r.json() : null).catch(() => null);
+  document.getElementById('banner-2fa').style.display = st && !st.enrolled ? '' : 'none';
+  if (enrolmentOnly) { showPage('security'); return; }
   loadStats();
   loadUsers();
   loadConfig();
@@ -395,6 +552,9 @@ function showPage(name) {
   document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
   document.getElementById(`page-${name}`).classList.add('active');
   document.querySelector(`[data-page="${name}"]`).classList.add('active');
+  if (name === 'reports') loadReports();
+  if (name === 'audit') loadAudit(0);
+  if (name === 'security') loadSecurity();
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -520,6 +680,143 @@ function previewLogo() {
   document.getElementById('logo-preview').src = document.getElementById('cfg-logo').value;
 }
 
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+function barChart(barsId, axisId, rows, valueKey, labelKey) {
+  const max = Math.max(1, ...rows.map(r => r[valueKey]));
+  document.getElementById(barsId).innerHTML = rows.map(r =>
+    `<div title="${esc(String(r[labelKey]))}: ${r[valueKey]}" style="height:${Math.max(2, 100 * r[valueKey] / max)}%"></div>`).join('');
+  document.getElementById(axisId).innerHTML = rows.length
+    ? `<span>${esc(String(rows[0][labelKey]))}</span><span>peak ${max}</span><span>${esc(String(rows[rows.length - 1][labelKey]))}</span>` : '';
+}
+function histogram(el, title, buckets) {
+  const max = Math.max(1, ...buckets.map(b => b.count));
+  document.getElementById(el).innerHTML = `<div style="grid-column:1/-1;font-weight:600">${esc(title)}</div>` +
+    buckets.map(b => `<div>${esc(b.bucket)}</div><div class="track"><div class="fill" style="width:${100 * b.count / max}%"></div></div><div>${b.count}</div>`).join('');
+}
+const pct = v => v == null ? '—' : v + '%';
+
+async function loadReports() {
+  const days = document.getElementById('rp-days').value;
+  const bucket = document.getElementById('rp-bucket').value;
+  const get = p => adminFetch(p).then(r => r.ok ? r.json() : null);
+  const [act, sign, ret, use, nights] = await Promise.all([
+    get(`/admin/reports/activity?days=${Math.min(days, 90)}`),
+    get(`/admin/reports/signups?days=${Math.max(days, bucket === 'month' ? 365 : 30)}&bucket=${bucket}`),
+    get('/admin/reports/retention?weeks=8'),
+    get(`/admin/reports/usage?days=${days}`),
+    get(`/admin/reports/nights?days=${days}`),
+  ]);
+  if (act) {
+    document.getElementById('rp-a1').textContent = act.active_24h;
+    document.getElementById('rp-a7').textContent = act.active_7d;
+    document.getElementById('rp-a30').textContent = act.active_30d;
+    document.getElementById('rp-sticky').textContent = act.stickiness_pct == null ? '' : `${act.stickiness_pct}% active today`;
+    barChart('rp-active-bars', 'rp-active-axis', act.daily, 'active_users', 'date');
+  }
+  if (sign) barChart('rp-signup-bars', 'rp-signup-axis', sign, 'new_users', 'period');
+  if (ret) document.getElementById('rp-retention').innerHTML = ret.map(r =>
+    `<tr><td>${esc(r.cohort_week)}</td><td>${r.users}</td><td>${pct(r.week_1_pct)}</td><td>${pct(r.week_2_pct)}</td><td>${pct(r.week_3_pct)}</td><td>${pct(r.week_4_pct)}</td></tr>`).join('');
+  if (use) document.getElementById('rp-usage').innerHTML = use.features.map(f =>
+    `<tr><td>${esc(f.feature)}</td><td>${f.users}</td><td>${pct(f.share_of_active_pct)}</td><td>${f.records}</td></tr>`).join('');
+  if (nights) {
+    document.getElementById('rp-nights').textContent = nights.nights;
+    document.getElementById('rp-nights-sub').textContent = `${nights.recording_users} users · ${pct(nights.complete_pct)} complete · median ${nights.median_night_hours ?? '—'} h`;
+    histogram('rp-hist-users', 'Nights per user', nights.nights_per_user);
+    histogram('rp-hist-coughs', 'Coughs per night', nights.coughs_per_night);
+  }
+}
+
+async function exportCsv(name) {
+  const days = document.getElementById('rp-days').value;
+  const bucket = document.getElementById('rp-bucket').value;
+  const q = name === 'signups' ? `?days=${days}&bucket=${bucket}` : name === 'retention' ? '?weeks=8' : `?days=${days}`;
+  const res = await adminFetch(`/admin/reports/export/${name}.csv${q}`);
+  if (!res.ok) { showToast('Export failed'); return; }
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: `haman-${name}.csv` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Audit log ─────────────────────────────────────────────────────────────────
+const AUDIT_PAGE = 50;
+let auditOffset = 0;
+async function loadAudit(offset) {
+  auditOffset = Math.max(0, offset);
+  const action = document.getElementById('au-action').value;
+  const days = document.getElementById('au-days').value;
+  const q = new URLSearchParams({ limit: AUDIT_PAGE, offset: auditOffset });
+  if (action) q.set('action', action);
+  if (days) q.set('days', days);
+  const res = await adminFetch(`/admin/audit?${q}`);
+  if (!res.ok) { document.getElementById('au-tbody').innerHTML = '<tr class="loading-row"><td colspan="6">Failed to load.</td></tr>'; return; }
+  const d = await res.json();
+  document.getElementById('au-total').textContent = `${d.total} entries`;
+  document.getElementById('au-prev').disabled = auditOffset === 0;
+  document.getElementById('au-next').disabled = auditOffset + AUDIT_PAGE >= d.total;
+  document.getElementById('au-tbody').innerHTML = d.items.map(r => `
+    <tr>
+      <td style="font-size:.8rem;white-space:nowrap">${fmtDate(r.at)}</td>
+      <td style="font-size:.8rem">${esc(r.admin_email || '—')}</td>
+      <td><span class="badge badge-blue">${esc(r.action)}</span></td>
+      <td style="font-size:.8rem">${r.target_type ? esc(r.target_type + ' ' + (r.target_id ?? '')) : '—'}</td>
+      <td class="detail-cell">${r.detail ? esc(JSON.stringify(r.detail)) : ''}</td>
+      <td style="font-size:.78rem;color:var(--text-muted)">${esc(r.ip || '')}</td>
+    </tr>`).join('') || '<tr class="loading-row"><td colspan="6">Nothing logged yet.</td></tr>';
+}
+
+// ── Security (two-factor) ─────────────────────────────────────────────────────
+async function loadSecurity() {
+  const box = document.getElementById('sec-panel');
+  const res = await rawAdminFetch('/admin/2fa/status');
+  if (!res.ok) { box.textContent = 'Could not load status.'; return; }
+  const st = await res.json();
+  if (st.enrolled) {
+    box.innerHTML = `<h3>Two-factor authentication <span class="badge badge-green">On</span></h3>
+      <p class="desc">Every admin request needs a code from your authenticator app. The sign-in lasts a few hours.</p>
+      ${st.required && !st.token_valid ? '' : `<div class="field"><label>To turn it off, enter a current code</label><input id="tfa-code" inputmode="numeric" maxlength="7" placeholder="6-digit code" /></div>
+      <button class="btn btn-outline" onclick="disable2fa()">Turn off 2FA</button>`}
+      <p class="hint" style="margin-top:12px">Lost your phone? Ask the server owner to run <code>python -m app.jobs.reset_admin_2fa your@email</code>.</p>`;
+  } else {
+    box.innerHTML = `<h3>Two-factor authentication <span class="badge badge-red">Off</span></h3>
+      <p class="desc">Adds a one-time code from an authenticator app (Google Authenticator, Authy, 1Password…) on top of your password and the admin secret.</p>
+      <button class="btn btn-primary" onclick="start2fa()">Set up 2FA</button>`;
+  }
+}
+async function start2fa() {
+  const res = await rawAdminFetch('/admin/2fa/setup', { method: 'POST' });
+  if (!res.ok) { showToast('Could not start setup'); return; }
+  const d = await res.json();
+  document.getElementById('sec-panel').innerHTML = `<h3>Set up two-factor authentication</h3>
+    <p class="desc">1. In your authenticator app choose “Enter a setup key” (or open the link below on your phone) and add this key:</p>
+    <code class="secret">${esc(d.secret.replace(/(.{4})/g, '$1 ').trim())}</code>
+    <p class="hint"><a href="${esc(d.otpauth_uri)}">Open in authenticator app</a> · account: time-based, 6 digits</p>
+    <p class="desc" style="margin-top:14px">2. Enter the 6-digit code it shows to finish:</p>
+    <div class="field"><input id="tfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" /></div>
+    <button class="btn btn-primary" onclick="finish2fa()">Turn on 2FA</button>
+    <p class="hint" style="margin-top:12px">Nothing changes until you enter a valid code, so you cannot lock yourself out by closing this page.</p>`;
+}
+async function finish2fa() {
+  const code = document.getElementById('tfa-code').value.trim();
+  const res = await rawAdminFetch('/admin/2fa/enable', { method: 'POST', body: { code } });
+  if (!res.ok) { showToast(res.status === 429 ? 'Too many tries — wait 15 minutes' : 'Code not accepted'); return; }
+  tfaToken = (await res.json()).token;
+  sessionStorage.setItem('haman_admin_2fa', tfaToken);
+  document.getElementById('banner-2fa').style.display = 'none';
+  showToast('Two-factor authentication is on');
+  loadSecurity(); loadStats(); loadUsers(); loadConfig();
+}
+async function disable2fa() {
+  const code = document.getElementById('tfa-code').value.trim();
+  const res = await adminFetch('/admin/2fa/disable', { method: 'POST', body: { code } });
+  if (!res.ok) { showToast('Code not accepted'); return; }
+  tfaToken = ''; sessionStorage.removeItem('haman_admin_2fa');
+  showToast('Two-factor authentication is off');
+  document.getElementById('banner-2fa').style.display = '';
+  loadSecurity();
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -530,8 +827,12 @@ function showToast(msg) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('login-code').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 if (token && adminSecret) {
-  adminFetch('/admin/stats').then(r => { if (r.ok) showApp(); });
+  rawAdminFetch('/admin/stats').then(async r => {
+    if (r.ok) showApp();
+    else if (r.status === 403 && (await r.clone().json().catch(() => ({}))).detail === 'admin_2fa_enrolment_required') showApp(true);
+  });
 }
 </script>
 </body>

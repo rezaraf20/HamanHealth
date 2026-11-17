@@ -238,3 +238,32 @@ class UserConsent(Base):
     audio_clips_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class AdminAuditLog(Base):
+    """What an admin did or looked at. Append-only (enforced by a database trigger).
+    No foreign keys: the row outlives the admin and the user it refers to."""
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    admin_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    admin_email: Mapped[str | None] = mapped_column(String(255))
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_type: Mapped[str | None] = mapped_column(String(32))
+    target_id: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[dict | None] = mapped_column(JsonType)
+    ip: Mapped[str | None] = mapped_column(String(64))
+
+
+class AdminTotp(Base):
+    """TOTP enrolment state for one admin. The secret is encrypted at rest."""
+    __tablename__ = "admin_totp"
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    secret_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_step: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
